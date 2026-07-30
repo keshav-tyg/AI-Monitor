@@ -26,16 +26,6 @@ export interface RuleInput {
 export const ALLOWANCE_REASON = 'Daily allowance reached';
 
 /**
- * Preference order once the daily allowance is spent.
- *
- * `close-tab` outranks `block` here because the plan's own test requires it:
- * a rule configured with every intervention must close the offending tab.
- * The background worker installs the until-tomorrow block alongside this when
- * `block` is also configured, so the stronger action is never lost.
- */
-const ALLOWANCE_PRECEDENCE: readonly InterventionKind[] = ['close-tab', 'block', 'pause', 'notify'];
-
-/**
  * Pure decision function. Every uncertain path returns `none` so that an
  * unknown state can never escalate into closing a tab or blocking a site.
  */
@@ -46,14 +36,16 @@ export function nextIntervention(input: RuleInput): InterventionDecision {
   if (rule.interventions.length === 0) return { kind: 'none' };
 
   const allowanceMs = rule.dailyAllowanceMinutes * 60_000;
-  if (usageMs >= allowanceMs) {
-    const action = ALLOWANCE_PRECEDENCE.find((kind) => rule.interventions.includes(kind));
-    return action ? { kind: action, reason: ALLOWANCE_REASON } : { kind: 'none' };
-  }
+  const allowanceExhausted = usageMs >= allowanceMs;
 
-  if (score < rule.warningScore) return { kind: 'none' };
+  // Either trigger can open the ladder, and both walk the same steps. Spending
+  // an allowance used to jump straight to the harshest configured action, so a
+  // tab could vanish with no warning at all.
+  if (!allowanceExhausted && score < rule.warningScore) return { kind: 'none' };
 
-  const explanation = reason ?? 'Sustained passive scrolling detected';
+  const explanation = allowanceExhausted
+    ? ALLOWANCE_REASON
+    : (reason ?? 'Sustained passive scrolling detected');
   const graceMs = rule.gracePeriodSeconds * 1_000;
   const [first, second, third] = rule.interventions;
 
