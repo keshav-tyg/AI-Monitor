@@ -22,7 +22,10 @@ export default {
     '*://twitter.com/*',
     '*://*.youtube.com/*',
   ],
-  background: { service_worker: 'src/background/index.ts', type: 'module' },
+  // Entry filenames must stay distinct. The bundler derives chunk names from
+  // the basename, so two entries both called index.ts collide and the worker
+  // loader can end up importing the content script.
+  background: { service_worker: 'src/background/service-worker.ts', type: 'module' },
   content_scripts: [
     {
       matches: [
@@ -31,7 +34,7 @@ export default {
         '*://twitter.com/*',
         '*://*.youtube.com/*',
       ],
-      js: ['src/content/index.ts'],
+      js: ['src/content/content-script.ts'],
       run_at: 'document_idle',
     },
   ],

@@ -7,7 +7,7 @@ it('packages the icon the notify intervention asks Chrome to render', () => {
   // cannot be loaded, which silently swallowed every notify intervention.
   expect(existsSync(ICON_PATH)).toBe(true);
 
-  const source = readFileSync('src/background/index.ts', 'utf8');
+  const source = readFileSync('src/background/service-worker.ts', 'utf8');
   const iconUrl = source.match(/iconUrl:\s*'([^']+)'/)?.[1];
   expect(iconUrl).toBeDefined();
   expect(existsSync(`public/${iconUrl}`)).toBe(true);
