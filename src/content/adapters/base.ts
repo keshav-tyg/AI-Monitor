@@ -1,4 +1,5 @@
 import type { NormalizedEvent, PurposefulDetail, SiteId } from '../../shared/types';
+import { HEARTBEAT_INTERVAL_MS } from '../../shared/constants';
 import { createInstagramAdapter } from './instagram';
 import { createXAdapter } from './x';
 import { createYouTubeAdapter } from './youtube';
@@ -49,6 +50,7 @@ export function detectSite(url: URL): SiteId | undefined {
 export function createBaseAdapter(definition: AdapterDefinition, emit: Emit): PageAdapter {
   let lastScrollAt = 0;
   let observer: MutationObserver | undefined;
+  let heartbeatTimer: number | undefined;
   let started = false;
 
   const onScroll = (): void => {
@@ -72,6 +74,11 @@ export function createBaseAdapter(definition: AdapterDefinition, emit: Emit): Pa
     emit({ kind: 'content-advance', at: Date.now() });
   };
 
+  const heartbeat = (): void => {
+    if (document.visibilityState !== 'visible') return;
+    emit({ kind: 'heartbeat', at: Date.now() });
+  };
+
   return {
     site: definition.site,
     start(): void {
@@ -82,6 +89,7 @@ export function createBaseAdapter(definition: AdapterDefinition, emit: Emit): Pa
       document.addEventListener('click', onClick, true);
       observer = new MutationObserver(checkAdvance);
       observer.observe(document.documentElement, { childList: true, subtree: true });
+      heartbeatTimer = window.setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
     },
     stop(): void {
       if (!started) return;
@@ -90,6 +98,8 @@ export function createBaseAdapter(definition: AdapterDefinition, emit: Emit): Pa
       document.removeEventListener('click', onClick, true);
       observer?.disconnect();
       observer = undefined;
+      if (heartbeatTimer !== undefined) window.clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
       emit({ kind: 'view-left', at: Date.now() });
     },
   };

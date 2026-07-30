@@ -30,6 +30,12 @@ export function applyEvent(session: SessionState, event: NormalizedEvent): Sessi
     return { ...session, lastEventAt: event.at };
   }
 
+  // Timekeeping keeps allowance usage current while a Reel is watched, but it
+  // is deliberately not behavioral evidence for doomscroll detection.
+  if (event.kind === 'heartbeat') {
+    return { ...session, lastEventAt: event.at };
+  }
+
   if (event.kind === 'purposeful-action') {
     return {
       ...session,

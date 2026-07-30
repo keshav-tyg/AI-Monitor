@@ -61,6 +61,9 @@ export const BLOCK_RULE_ID_BASE = 9000;
 /** A single event can never bill more than this much foreground time. */
 export const MAX_EVENT_GAP_MS = 30_000;
 
+/** Active supported views report time without adding a scrolling signal. */
+export const HEARTBEAT_INTERVAL_MS = 10_000;
+
 /** "Continue for 5 minutes" suppression. Per tab, never persisted. */
 export const TEMPORARY_CONTINUE_MS = 300_000;
 

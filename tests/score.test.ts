@@ -1,4 +1,5 @@
 import { applyEvent, initialSession } from '../src/engine/score';
+import type { NormalizedEvent } from '../src/shared/types';
 
 const start = { site: 'youtube-shorts' as const, kind: 'view-entered' as const, at: 1_000 };
 
@@ -17,4 +18,24 @@ it('raises confidence for sustained passive advances and scrolling', () => {
 it('materially reduces confidence after a purposeful action', () => {
   const state = applyEvent({ ...initialSession(start), score: 12 }, { ...start, kind: 'purposeful-action', detail: 'comment', at: 10_000 });
   expect(state.score).toBeLessThan(10);
+});
+
+it('does not count a timekeeping heartbeat as scrolling behavior', () => {
+  const session = {
+    ...initialSession(start),
+    score: 5,
+    consecutiveAdvances: 3,
+    continuousScrolls: 4,
+  };
+  const heartbeat = {
+    site: 'youtube-shorts',
+    kind: 'heartbeat',
+    at: 20_000,
+  } as unknown as NormalizedEvent;
+
+  const state = applyEvent(session, heartbeat);
+
+  expect(state.score).toBe(5);
+  expect(state.consecutiveAdvances).toBe(3);
+  expect(state.continuousScrolls).toBe(4);
 });

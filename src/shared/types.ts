@@ -4,6 +4,7 @@ export type SiteId = 'instagram-reels' | 'x-timeline' | 'youtube-shorts';
 export type EventKind =
   | 'view-entered'
   | 'view-left'
+  | 'heartbeat'
   | 'scroll'
   | 'content-advance'
   | 'purposeful-action';
