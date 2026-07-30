@@ -1,0 +1,111 @@
+import { DEFAULT_SETTINGS, MAX_INTERVENTION_RECORDS, SITE_IDS } from './constants';
+import { todayKey } from './time';
+import type {
+  InterventionFeedback,
+  InterventionRecord,
+  Settings,
+  SiteId,
+  SiteRule,
+} from './types';
+
+/**
+ * Every read and write in this module targets `chrome.storage.local`.
+ * `sync` and `managed` are deliberately never used: synced data would leave
+ * the device, which is the one thing this extension promises not to do.
+ */
+const KEY_SETTINGS = 'settings';
+const KEY_USAGE = 'usage';
+const KEY_INTERVENTIONS = 'interventions';
+const KEY_BLOCKS = 'blocks';
+
+interface UsageEntry {
+  day: string;
+  milliseconds: number;
+}
+
+type UsageMap = Partial<Record<SiteId, UsageEntry>>;
+
+export interface BlockEntry {
+  site: SiteId;
+  expiresAt: number;
+}
+
+async function readKey<T>(key: string, fallback: T): Promise<T> {
+  const stored = await chrome.storage.local.get(key);
+  const value = (stored as Record<string, unknown>)[key];
+  return value === undefined ? fallback : (value as T);
+}
+
+async function writeKey(key: string, value: unknown): Promise<void> {
+  await chrome.storage.local.set({ [key]: value });
+}
+
+/**
+ * Missing or partially-written settings resolve to defaults rather than
+ * throwing: an unreadable rule must fail open, not enforce something random.
+ */
+export async function getSettings(): Promise<Settings> {
+  const stored = await readKey<Partial<Settings>>(KEY_SETTINGS, {});
+  const rules = {} as Record<SiteId, SiteRule>;
+  for (const site of SITE_IDS) {
+    rules[site] = { ...DEFAULT_SETTINGS.rules[site], ...(stored.rules?.[site] ?? {}) };
+  }
+  return { enabled: stored.enabled ?? DEFAULT_SETTINGS.enabled, rules };
+}
+
+export async function saveSettings(settings: Settings): Promise<void> {
+  await writeKey(KEY_SETTINGS, settings);
+}
+
+/** Zero once the stored day is no longer today — the daily reset. */
+export async function getUsage(site: SiteId, now: number = Date.now()): Promise<number> {
+  const usage = await readKey<UsageMap>(KEY_USAGE, {});
+  const entry = usage[site];
+  if (!entry || entry.day !== todayKey(now)) return 0;
+  return entry.milliseconds;
+}
+
+/** Returns the new total for the current local day. */
+export async function addUsage(
+  site: SiteId,
+  milliseconds: number,
+  now: number = Date.now(),
+): Promise<number> {
+  const usage = await readKey<UsageMap>(KEY_USAGE, {});
+  const day = todayKey(now);
+  const entry = usage[site];
+  const base = entry && entry.day === day ? entry.milliseconds : 0;
+  const total = base + Math.max(0, milliseconds);
+  usage[site] = { day, milliseconds: total };
+  await writeKey(KEY_USAGE, usage);
+  return total;
+}
+
+/** Oldest first. Appending past the cap drops only the oldest record. */
+export async function listInterventions(): Promise<InterventionRecord[]> {
+  return readKey<InterventionRecord[]>(KEY_INTERVENTIONS, []);
+}
+
+export async function appendIntervention(record: InterventionRecord): Promise<void> {
+  const records = await listInterventions();
+  const retained = records.slice(-(MAX_INTERVENTION_RECORDS - 1));
+  retained.push(record);
+  await writeKey(KEY_INTERVENTIONS, retained);
+}
+
+/** An unknown id leaves every stored record untouched. */
+export async function setFeedback(id: string, feedback: InterventionFeedback): Promise<void> {
+  const records = await listInterventions();
+  const updated = records.map((record) =>
+    record.id === id ? { ...record, feedback } : record,
+  );
+  await writeKey(KEY_INTERVENTIONS, updated);
+}
+
+export async function getBlocks(): Promise<BlockEntry[]> {
+  return readKey<BlockEntry[]>(KEY_BLOCKS, []);
+}
+
+export async function saveBlocks(blocks: BlockEntry[]): Promise<void> {
+  await writeKey(KEY_BLOCKS, blocks);
+}
