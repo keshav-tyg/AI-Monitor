@@ -90,7 +90,7 @@ export function showPauseOverlay(options: PauseOverlayOptions): void {
 
   const leave = makeButton('Leave', () => {
     dismissOverlays();
-    notifyBackground({ type: 'leave-feed', site: options.site });
+    notifyBackground({ type: 'leave-feed', site: options.site, reason: options.reason });
   });
   actions.append(leave);
 

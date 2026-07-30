@@ -11,10 +11,12 @@ import {
   addUsage,
   appendIntervention,
   getBlocks,
+  getReturnPause,
   getSettings,
   getUsage,
   listInterventions,
   saveBlocks,
+  saveReturnPause,
   saveSettings,
   setFeedback,
   type BlockEntry,
@@ -219,6 +221,15 @@ export async function handleEvent(
   const suppression = suppressedUntil.get(tabId);
   if (suppression !== undefined && now < suppression) return { kind: 'none' };
 
+  // A deliberate Leave means the person already saw this pause. Reopening
+  // the feed must not restart the warning/grace ladder from the first step.
+  const returnPause = await getReturnPause(event.site, now);
+  if (returnPause) {
+    const decision: InterventionDecision = { kind: 'pause', reason: returnPause.reason };
+    await enforce(tabId, event.site, decision, session, now, false);
+    return decision;
+  }
+
   const usageMs = await getUsage(event.site, now);
   const decision = nextIntervention({
     rule,
@@ -274,6 +285,12 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
       return { ok: true, type: 'ack' };
     case 'leave-feed': {
       if (tabId === undefined) return { ok: false, error: 'No originating tab' };
+      if (!isSupportedSite(request.site)) return { ok: false, error: 'Unsupported site' };
+      await saveReturnPause({
+        site: request.site,
+        reason: typeof request.reason === 'string' ? request.reason : 'Focus pause',
+        expiresAt: nextLocalMidnight(),
+      });
       sessions.delete(tabId);
       suppressedUntil.delete(tabId);
       await chrome.tabs.remove(tabId);
