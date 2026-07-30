@@ -23,5 +23,9 @@ it('asks the service worker to leave the current feed when Leave is clicked', ()
   );
   leave?.click();
 
-  expect(sendMessage).toHaveBeenCalledWith({ type: 'leave-feed', site: 'instagram-reels' });
+  expect(sendMessage).toHaveBeenCalledWith({
+    type: 'leave-feed',
+    site: 'instagram-reels',
+    reason: 'test',
+  });
 });

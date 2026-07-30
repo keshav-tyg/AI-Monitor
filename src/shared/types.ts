@@ -87,7 +87,7 @@ export type BackgroundRequest =
   | { type: 'save-settings'; settings: Settings }
   | { type: 'get-interventions' }
   | { type: 'set-feedback'; id: string; feedback: InterventionFeedback }
-  | { type: 'leave-feed'; site: SiteId }
+  | { type: 'leave-feed'; site: SiteId; reason: string }
   | { type: 'temporary-continue'; site: SiteId };
 
 export type BackgroundResponse =

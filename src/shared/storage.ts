@@ -17,6 +17,7 @@ const KEY_SETTINGS = 'settings';
 const KEY_USAGE = 'usage';
 const KEY_INTERVENTIONS = 'interventions';
 const KEY_BLOCKS = 'blocks';
+const KEY_RETURN_PAUSES = 'return-pauses';
 
 interface UsageEntry {
   day: string;
@@ -27,6 +28,13 @@ type UsageMap = Partial<Record<SiteId, UsageEntry>>;
 
 export interface BlockEntry {
   site: SiteId;
+  expiresAt: number;
+}
+
+/** A deliberate Leave keeps the same pause ready if the feed is reopened. */
+export interface ReturnPauseEntry {
+  site: SiteId;
+  reason: string;
   expiresAt: number;
 }
 
@@ -108,4 +116,19 @@ export async function getBlocks(): Promise<BlockEntry[]> {
 
 export async function saveBlocks(blocks: BlockEntry[]): Promise<void> {
   await writeKey(KEY_BLOCKS, blocks);
+}
+
+export async function getReturnPause(
+  site: SiteId,
+  now: number = Date.now(),
+): Promise<ReturnPauseEntry | undefined> {
+  const pauses = await readKey<ReturnPauseEntry[]>(KEY_RETURN_PAUSES, []);
+  const active = pauses.filter((entry) => entry.expiresAt > now);
+  if (active.length !== pauses.length) await writeKey(KEY_RETURN_PAUSES, active);
+  return active.find((entry) => entry.site === site);
+}
+
+export async function saveReturnPause(entry: ReturnPauseEntry): Promise<void> {
+  const pauses = await readKey<ReturnPauseEntry[]>(KEY_RETURN_PAUSES, []);
+  await writeKey(KEY_RETURN_PAUSES, [...pauses.filter((item) => item.site !== entry.site), entry]);
 }
