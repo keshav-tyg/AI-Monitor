@@ -1,0 +1,20 @@
+{
+  "name": "local-focus-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local-first Chrome extension that detects sustained passive feed use and applies your configured intervention.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.7.1",
+    "@types/chrome": "^0.2.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}
