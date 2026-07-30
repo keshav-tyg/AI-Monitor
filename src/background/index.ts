@@ -230,7 +230,7 @@ async function buildStatus(now: number): Promise<BackgroundResponse> {
       active: activeSites.has(site),
     });
   }
-  return { ok: true, type: 'status', enabled: settings.enabled, sites };
+  return { ok: true, type: 'status', enabled: settings.enabled, sites, settings };
 }
 
 async function route(request: BackgroundRequest, tabId: number | undefined): Promise<BackgroundResponse> {

@@ -1,0 +1,59 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  min-width: 280px;
+  line-height: 1.45;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+p {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+p.on {
+  color: #1a7f37;
+}
+
+p.off {
+  opacity: 0.7;
+}
+
+ul {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+}
+
+em {
+  opacity: 0.75;
+}
+
+button {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(127, 127, 127, 0.5);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
