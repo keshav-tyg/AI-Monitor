@@ -73,7 +73,9 @@ export type InterventionDecision =
 export interface SiteStatus {
   site: SiteId;
   enabled: boolean;
-  usedMinutes: number;
+  /** Raw milliseconds. Rounding to whole minutes here made a 1-minute
+   *  allowance read "0 of 1" until the instant it enforced. */
+  usedMs: number;
   allowedMinutes: number;
   active: boolean;
 }
