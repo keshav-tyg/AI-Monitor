@@ -27,6 +27,17 @@ function labelFor(site: SiteId): string {
   return SUPPORTED_SITES.find((entry) => entry.id === site)?.label ?? site;
 }
 
+function usageMilliseconds(site: SiteStatus): number {
+  if (Number.isFinite(site.usedMs)) return site.usedMs;
+
+  // Chrome can briefly keep an older service worker alive after the popup
+  // bundle updates. Its former status contract used whole minutes.
+  const legacyMinutes = (site as SiteStatus & { usedMinutes?: unknown }).usedMinutes;
+  return typeof legacyMinutes === 'number' && Number.isFinite(legacyMinutes)
+    ? legacyMinutes * 60_000
+    : 0;
+}
+
 export async function renderPopup(root: Element): Promise<void> {
   const status = await request({ type: 'get-status' });
   root.replaceChildren();
@@ -50,7 +61,7 @@ export async function renderPopup(root: Element): Promise<void> {
       element(
         'span',
         site.enabled
-          ? ` ${formatDuration(site.usedMs)} of ${site.allowedMinutes} min used today`
+          ? ` ${formatDuration(usageMilliseconds(site))} of ${site.allowedMinutes} min used today`
           : ' rule disabled',
       ),
     );
