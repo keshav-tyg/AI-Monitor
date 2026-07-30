@@ -247,7 +247,7 @@ async function buildStatus(now: number): Promise<BackgroundResponse> {
     sites.push({
       site,
       enabled: rule.enabled,
-      usedMinutes: Math.floor((await getUsage(site, now)) / 60_000),
+      usedMs: await getUsage(site, now),
       allowedMinutes: rule.dailyAllowanceMinutes,
       active: activeSites.has(site),
     });

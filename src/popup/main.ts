@@ -1,4 +1,5 @@
 import { SUPPORTED_SITES } from '../shared/constants';
+import { formatDuration } from '../shared/time';
 import type { BackgroundResponse, SiteId, SiteStatus } from '../shared/types';
 
 async function request(message: unknown): Promise<BackgroundResponse | undefined> {
@@ -49,7 +50,7 @@ export async function renderPopup(root: Element): Promise<void> {
       element(
         'span',
         site.enabled
-          ? ` ${site.usedMinutes} of ${site.allowedMinutes} min used today`
+          ? ` ${formatDuration(site.usedMs)} of ${site.allowedMinutes} min used today`
           : ' rule disabled',
       ),
     );
