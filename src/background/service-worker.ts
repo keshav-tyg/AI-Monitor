@@ -272,8 +272,11 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
     case 'set-feedback':
       await setFeedback(request.id, request.feedback);
       return { ok: true, type: 'ack' };
-    case 'dismiss-pause': {
-      if (tabId !== undefined) sessions.delete(tabId);
+    case 'leave-feed': {
+      if (tabId === undefined) return { ok: false, error: 'No originating tab' };
+      sessions.delete(tabId);
+      suppressedUntil.delete(tabId);
+      await chrome.tabs.remove(tabId);
       return { ok: true, type: 'ack' };
     }
     case 'temporary-continue': {
