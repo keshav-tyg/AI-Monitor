@@ -1,4 +1,4 @@
-import { handleEvent, installBlock, resetSessions } from '../src/background/index';
+import { handleEvent, installBlock, resetSessions } from '../src/background/service-worker';
 import { DEFAULT_SETTINGS } from '../src/shared/constants';
 import { saveSettings } from '../src/shared/storage';
 import type { InterventionKind } from '../src/shared/types';
