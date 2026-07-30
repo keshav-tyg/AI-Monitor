@@ -21,6 +21,18 @@ export default {
     '*://twitter.com/*',
     '*://*.youtube.com/*',
   ],
+  content_scripts: [
+    {
+      matches: [
+        '*://*.instagram.com/*',
+        '*://x.com/*',
+        '*://twitter.com/*',
+        '*://*.youtube.com/*',
+      ],
+      js: ['src/content/index.ts'],
+      run_at: 'document_idle',
+    },
+  ],
   action: { default_popup: 'src/popup/index.html', default_title: 'Local Focus Coach' },
   options_page: 'src/options/index.html',
 } satisfies ManifestV3Export;
