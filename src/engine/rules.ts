@@ -17,6 +17,8 @@ export interface RuleInput {
   now: number;
   /** When the notify step fired for this session, if it has. */
   warnedAt?: number;
+  /** When the pause step fired for this session, if it has. */
+  pauseShownAt?: number;
   /** Plain-language explanation from `sessionReason`. */
   reason?: string;
 }
@@ -38,7 +40,7 @@ const ALLOWANCE_PRECEDENCE: readonly InterventionKind[] = ['close-tab', 'block',
  * unknown state can never escalate into closing a tab or blocking a site.
  */
 export function nextIntervention(input: RuleInput): InterventionDecision {
-  const { rule, score, usageMs, now, warnedAt, reason } = input;
+  const { rule, score, usageMs, now, warnedAt, pauseShownAt, reason } = input;
 
   if (!rule.enabled) return { kind: 'none' };
   if (rule.interventions.length === 0) return { kind: 'none' };
@@ -52,17 +54,21 @@ export function nextIntervention(input: RuleInput): InterventionDecision {
   if (score < rule.warningScore) return { kind: 'none' };
 
   const explanation = reason ?? 'Sustained passive scrolling detected';
-  const [first, second] = rule.interventions;
+  const graceMs = rule.gracePeriodSeconds * 1_000;
+  const [first, second, third] = rule.interventions;
 
   // First crossing of the threshold: the gentlest configured action only.
   if (warnedAt === undefined) {
     return first ? { kind: first, reason: explanation } : { kind: 'none' };
   }
 
-  // Escalate only once the person has had the full grace period to respond.
-  if (now - warnedAt >= rule.gracePeriodSeconds * 1_000) {
+  // Each further step costs another full grace period, so someone who stops
+  // scrolling never sees the next one.
+  if (pauseShownAt === undefined) {
+    if (now - warnedAt < graceMs) return { kind: 'none' };
     return second ? { kind: second, reason: explanation } : { kind: 'none' };
   }
 
-  return { kind: 'none' };
+  if (now - pauseShownAt < graceMs) return { kind: 'none' };
+  return third ? { kind: third, reason: explanation } : { kind: 'none' };
 }

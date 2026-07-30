@@ -21,6 +21,7 @@ export default {
     '*://twitter.com/*',
     '*://*.youtube.com/*',
   ],
+  background: { service_worker: 'src/background/index.ts', type: 'module' },
   content_scripts: [
     {
       matches: [

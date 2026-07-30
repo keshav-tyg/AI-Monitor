@@ -46,3 +46,41 @@ export function installChromeStorageStub(): Map<string, unknown> {
 
   return store;
 }
+
+export interface ChromeApiSpies {
+  tabsRemove: ReturnType<typeof vi.fn>;
+  tabsSendMessage: ReturnType<typeof vi.fn>;
+  notificationsCreate: ReturnType<typeof vi.fn>;
+  getDynamicRules: ReturnType<typeof vi.fn>;
+  updateDynamicRules: ReturnType<typeof vi.fn>;
+}
+
+/**
+ * Layers enforcement-API spies over whatever `chrome` already exists, so a
+ * suite can assert that a fail-open path touched none of them.
+ */
+export function installChromeApiSpies(): ChromeApiSpies {
+  const spies: ChromeApiSpies = {
+    tabsRemove: vi.fn(async () => undefined),
+    tabsSendMessage: vi.fn(async () => undefined),
+    notificationsCreate: vi.fn(async () => 'notification-id'),
+    getDynamicRules: vi.fn(async () => []),
+    updateDynamicRules: vi.fn(async () => undefined),
+  };
+
+  const globalWithChrome = globalThis as unknown as { chrome?: Record<string, unknown> };
+  const existing = globalWithChrome.chrome ?? {};
+
+  globalWithChrome.chrome = {
+    ...existing,
+    runtime: { onMessage: { addListener: vi.fn() }, sendMessage: vi.fn() },
+    tabs: { remove: spies.tabsRemove, sendMessage: spies.tabsSendMessage },
+    notifications: { create: spies.notificationsCreate },
+    declarativeNetRequest: {
+      getDynamicRules: spies.getDynamicRules,
+      updateDynamicRules: spies.updateDynamicRules,
+    },
+  };
+
+  return spies;
+}
