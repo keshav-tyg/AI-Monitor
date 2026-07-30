@@ -13,6 +13,7 @@ export default defineConfig({
     // Node is the default; DOM-dependent suites opt in with a
     // `@vitest-environment jsdom` docblock at the top of the file.
     environment: 'node',
+    setupFiles: ['tests/setup-dom.ts'],
     include: ['tests/**/*.test.ts'],
   },
 });
