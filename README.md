@@ -64,8 +64,13 @@ step costs a full grace period, so stopping means you never see the next one:
 notify  →  (grace)  →  pause screen  →  (grace)  →  close tab
 ```
 
-Separately, once your daily allowance for a feed is spent, the configured
-enforcement applies immediately.
+Spending your daily allowance for a feed opens the same ladder, with "Daily
+allowance reached" as the reason. It does not skip ahead — you are always told
+before anything drastic happens.
+
+Note that a very short allowance makes the score path unreachable: scoring
+cannot begin until 120 seconds in a view, so an allowance under two minutes
+will always trigger first.
 
 ## Interventions
 
