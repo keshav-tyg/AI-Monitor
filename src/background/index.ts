@@ -39,6 +39,8 @@ const sessions = new Map<number, SessionState>();
 /** Per-tab "continue for 5 minutes" suppression. Also never persisted. */
 const suppressedUntil = new Map<number, number>();
 
+const BLOCK_ALARM_PREFIX = 'block-expiry-';
+
 /** Test seam so suites start from a clean worker. */
 export function resetSessions(): void {
   sessions.clear();
@@ -85,6 +87,11 @@ export async function installBlock(site: SiteId, expiresAt: number): Promise<voi
   const blocks = (await getBlocks()).filter((entry) => entry.site !== site);
   blocks.push({ site, expiresAt });
   await saveBlocks(blocks);
+
+  // DNR rules have no expiry of their own, and a blocked page loads no content
+  // script — so without an alarm nothing would ever wake the worker to remove
+  // this rule, and the block could outlive midnight indefinitely.
+  chrome.alarms?.create?.(`${BLOCK_ALARM_PREFIX}${site}`, { when: expiresAt });
 }
 
 export async function removeExpiredBlocks(now: number = Date.now()): Promise<void> {
@@ -100,6 +107,9 @@ export async function removeExpiredBlocks(now: number = Date.now()): Promise<voi
 
   if (removeRuleIds.length > 0) {
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: [] });
+  }
+  for (const entry of expired) {
+    void chrome.alarms?.clear?.(`${BLOCK_ALARM_PREFIX}${entry.site}`);
   }
   await saveBlocks(blocks.filter((entry) => entry.expiresAt > now));
 }
@@ -118,14 +128,19 @@ async function enforce(
 ): Promise<void> {
   const { kind, reason } = decision;
 
+  // Stamp by escalation stage, not by which action happened to fire. Keying on
+  // `kind` stalled any rule whose first intervention was not `notify`: the
+  // stage never advanced past the first step.
+  if (session.warnedAt === undefined) session.warnedAt = now;
+  else if (session.pauseShownAt === undefined) session.pauseShownAt = now;
+
   if (kind === 'notify') {
-    session.warnedAt = now;
     await record(site, kind, reason, now);
     await sendCommand(tabId, { type: 'notify', site, reason });
     try {
       await chrome.notifications.create({
         type: 'basic',
-        iconUrl: 'icon.png',
+        iconUrl: 'icons/icon-128.png',
         title: 'Still scrolling?',
         message: reason,
       });
@@ -136,7 +151,6 @@ async function enforce(
   }
 
   if (kind === 'pause') {
-    session.pauseShownAt = now;
     await record(site, kind, reason, now);
     await sendCommand(tabId, { type: 'pause', site, reason, allowContinue: true });
     return;
@@ -192,6 +206,14 @@ export async function handleEvent(
   if (previous) {
     const delta = Math.min(Math.max(0, event.at - previous.lastEventAt), MAX_EVENT_GAP_MS);
     if (delta > 0) await addUsage(event.site, delta, now);
+  }
+
+  // Leaving a feed must never be the thing that enforces against it. Without
+  // this, navigating away from a high-score session was itself the event that
+  // closed the tab or installed a block.
+  if (event.kind === 'view-left') {
+    sessions.delete(tabId);
+    return { kind: 'none' };
   }
 
   const suppression = suppressedUntil.get(tabId);
@@ -272,6 +294,13 @@ function registerListeners(): void {
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false, error: 'Request failed' }));
     return true;
+  });
+
+  // Fires even when nothing else is happening, which is the whole point.
+  const alarms = (globalThis as { chrome?: typeof chrome }).chrome?.alarms;
+  alarms?.onAlarm?.addListener((alarm) => {
+    if (!alarm.name.startsWith(BLOCK_ALARM_PREFIX)) return;
+    void removeExpiredBlocks(Date.now());
   });
 
   void removeExpiredBlocks(Date.now());

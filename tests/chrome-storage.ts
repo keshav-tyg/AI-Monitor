@@ -53,6 +53,8 @@ export interface ChromeApiSpies {
   notificationsCreate: ReturnType<typeof vi.fn>;
   getDynamicRules: ReturnType<typeof vi.fn>;
   updateDynamicRules: ReturnType<typeof vi.fn>;
+  alarmsCreate: ReturnType<typeof vi.fn>;
+  alarmsClear: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -66,6 +68,8 @@ export function installChromeApiSpies(): ChromeApiSpies {
     notificationsCreate: vi.fn(async () => 'notification-id'),
     getDynamicRules: vi.fn(async () => []),
     updateDynamicRules: vi.fn(async () => undefined),
+    alarmsCreate: vi.fn(() => undefined),
+    alarmsClear: vi.fn(async () => true),
   };
 
   const globalWithChrome = globalThis as unknown as { chrome?: Record<string, unknown> };
@@ -79,6 +83,11 @@ export function installChromeApiSpies(): ChromeApiSpies {
     declarativeNetRequest: {
       getDynamicRules: spies.getDynamicRules,
       updateDynamicRules: spies.updateDynamicRules,
+    },
+    alarms: {
+      create: spies.alarmsCreate,
+      clear: spies.alarmsClear,
+      onAlarm: { addListener: vi.fn() },
     },
   };
 
