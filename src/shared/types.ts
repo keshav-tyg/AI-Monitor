@@ -88,7 +88,7 @@ export type BackgroundRequest =
   | { type: 'temporary-continue'; site: SiteId };
 
 export type BackgroundResponse =
-  | { ok: true; type: 'status'; enabled: boolean; sites: SiteStatus[] }
+  | { ok: true; type: 'status'; enabled: boolean; sites: SiteStatus[]; settings: Settings }
   | { ok: true; type: 'settings'; settings: Settings }
   | { ok: true; type: 'interventions'; records: InterventionRecord[] }
   | { ok: true; type: 'ack' }
