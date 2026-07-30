@@ -1,6 +1,7 @@
 import type { ContentCommand, NormalizedEvent, SiteId } from '../shared/types';
 import { createAdapter, detectSite, type PageAdapter } from './adapters/base';
 import { dismissOverlays, showNotice, showPauseOverlay } from './overlay';
+import { createRouteWatcher } from './route-watcher';
 
 let adapter: PageAdapter | undefined;
 let activeSite: SiteId | undefined;
@@ -69,9 +70,20 @@ chrome.runtime.onMessage.addListener((message: unknown) => {
   });
 });
 
-// These feeds are single-page apps: the route changes without a reload.
+// These feeds are single-page apps. `popstate` and `hashchange` catch only
+// some transitions — pushState fires neither — so the watcher is the reliable
+// signal and these two are just a faster path for the cases they do cover.
+const routeWatcher = createRouteWatcher({
+  getHref: () => window.location.href,
+  onChange: syncToRoute,
+});
+
 window.addEventListener('popstate', syncToRoute);
 window.addEventListener('hashchange', syncToRoute);
-window.addEventListener('pagehide', stopAdapter);
+window.addEventListener('pagehide', () => {
+  routeWatcher.stop();
+  stopAdapter();
+});
 
+routeWatcher.start();
 syncToRoute();
