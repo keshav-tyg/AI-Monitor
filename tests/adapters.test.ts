@@ -31,7 +31,7 @@ it('keeps an active supported view alive for usage accounting', () => {
   );
 
   adapter.start();
-  vi.advanceTimersByTime(10_000);
+  vi.advanceTimersByTime(1_000);
   adapter.stop();
 
   expect(events).toContain('heartbeat');
