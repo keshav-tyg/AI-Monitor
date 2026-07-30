@@ -2,6 +2,8 @@ import { SUPPORTED_SITES } from '../shared/constants';
 import { formatDuration } from '../shared/time';
 import type { BackgroundResponse, SiteId, SiteStatus } from '../shared/types';
 
+const POPUP_REFRESH_MS = 1_000;
+
 async function request(message: unknown): Promise<BackgroundResponse | undefined> {
   const runtime = (
     globalThis as { chrome?: { runtime?: { sendMessage?: (value: unknown) => unknown } } }
@@ -81,5 +83,23 @@ export async function renderPopup(root: Element): Promise<void> {
   root.append(options);
 }
 
+/** Keep the short-lived popup accurate without overlapping status requests. */
+export function startPopup(root: Element): () => void {
+  let refreshing = false;
+  const refresh = async (): Promise<void> => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      await renderPopup(root);
+    } finally {
+      refreshing = false;
+    }
+  };
+
+  void refresh();
+  const timer = window.setInterval(() => void refresh(), POPUP_REFRESH_MS);
+  return () => window.clearInterval(timer);
+}
+
 const mount = document.querySelector('#app');
-if (mount) void renderPopup(mount);
+if (mount) startPopup(mount);
