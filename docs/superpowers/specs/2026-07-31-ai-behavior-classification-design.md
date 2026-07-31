@@ -1,111 +1,133 @@
-# On-Device AI Behavior Classification — Design
+# Intent-Aware Doomscroll Sessions — Design
 
 **Status:** Approved, not yet planned.
-**Supersedes nothing.** Extends the shipped extension described in `docs/superpowers/plans/2026-07-30-local-doomscrolling-coach.md`.
+**Replaces** the veto-only classifier design previously in this file (commit
+`6c273c0`). Extends the shipped extension from
+`docs/superpowers/plans/2026-07-30-local-doomscrolling-coach.md`.
 
 ## Problem
 
-The shipped detector is arithmetic, not AI:
+The shipped detector counts events:
 
 ```
 content advance = +2,  scroll = +1,  purposeful action = ×0.25
 nothing scores before 120s,  90s without activity resets the session
 ```
 
-It cannot distinguish a deliberate four-minute watch of one Reel from four
-minutes of passive swiping, because both reduce to the same counters. The
-stated goal — software that reads how someone is actually behaving — is not met
-by counting events.
+Two failures follow. It cannot tell a deliberate watch from passive swiping,
+because both reduce to the same counters. And it cannot tell *why you are here*
+— opening a reel a friend sent you is treated identically to opening the feed
+out of habit.
+
+The earlier design addressed only the first, by letting a model veto
+interventions. It never asked what the person intended.
 
 ## Goal
 
-Use an on-device language model to judge whether a session is genuinely passive
-before an intervention fires, without weakening the product's core promise that
-nothing leaves the device.
+Make the session's **declared intent** the primary control, with the model as
+the honesty check behind it. Watching something specific should always work.
+Doomscrolling should be bounded, by an amount you agreed to in advance.
 
-## Constraints
-
-- **Local only.** No network client may appear in `src/`.
-  `tests/privacy-boundary.test.ts` enforces this and must keep passing
-  untouched. Chrome's built-in `LanguageModel` is a browser API, not a network
-  call, so it satisfies this.
-- **How, never what.** The model may see interaction statistics. It may never
-  see titles, captions, on-screen text, URLs beyond the site key, or any
-  identifier.
-- **Fail open.** Every failure path — unavailable model, download in progress,
-  session error, timeout, malformed output — leaves the existing heuristic
-  decision untouched.
-- **The model may only subtract.** It can veto an intervention the heuristic
-  wanted. It can never cause one.
-- **Opt-in.** Off by default, consistent with every rule shipping disabled.
-
-## Scope
-
-Instagram Reels and YouTube Shorts only. Both are `<video>` feeds and share one
-engagement collector. The X timeline needs different signals entirely — dwell
-per post, scroll-back, reading pauses — and keeps the current heuristic
-untouched until this approach proves out.
-
-## Verified environment facts
-
-Confirmed against Chrome documentation and the target machine on 2026-07-31:
-
-- Requires **Chrome 138+**, and the flag
-  `chrome://flags/#prompt-api-for-gemini-nano` set to Enabled.
-- Hardware: >4GB VRAM, or 16GB RAM with 4+ CPU cores; ~22GB free disk; macOS
-  13+. One-time ~2GB model download performed by Chrome, not by this code.
-- **The API is unavailable in workers.** It cannot run in the MV3 service
-  worker; an offscreen document is required.
-- `responseConstraint` accepts a JSON Schema, so output can be schema-bound
-  rather than parsed from free text.
-- `create()` must declare an output language, or Chrome warns that output
-  quality and safety attestation are degraded. Pass
-  `expectedOutputs: [{ type: 'text', languages: ['en'] }]`.
-- On the target machine `await LanguageModel.availability()` returns
-  `'available'`.
-
-## Architecture
+## The model of a session
 
 ```
-content script (Reels / Shorts adapters)
-  └─ engagement collector: dwell, played fraction, replays, unmute,
-     manual pause, advance method
-        │  (no page content, no URLs, no text)
-        ▼
-service worker
-  ├─ heuristic scoring (unchanged) ── wants to intervene? ──┐
-  │                                                          ▼
-  │                                          offscreen document
-  │                                            warm LanguageModel session
-  │                                            responseConstraint JSON schema
-  │                                            → { verdict, confidence, reason }
-  │                                                          │
-  └──── veto → drop.  intervene → enforce. ◄────────────────┘
-             timeout / unavailable / malformed → heuristic decision stands
+enter Reels
+   │
+   ├─ arrived from a link or search? ──→ one item free, no prompt
+   │        └─ advance past it ──→ becomes a feed session
+   │
+   └─ feed entry ──→ "Hey, what are we doing here?"
+            ├─ "Doomscrolling — give me 5 minutes" → budget starts
+            └─ "Looking for something"             → no timer
+                        │
+                        ▼
+              model watches either way
+                        │
+        behavior contradicts the declaration, or budget spent
+                        │
+                        ▼
+                    feed wall
 ```
 
-The model runs only when the heuristic already wants to act, so inference is
-rare and its battery cost is negligible. A 1.5s timeout means a slow model
-never delays enforcement.
+## Entry provenance
+
+Deterministic, not AI. Two signals, read once on arrival:
+
+- `document.referrer`
+- whether the URL carried a specific item ID at arrival, before any advance
+
+| Arrival | Classification | Treatment |
+| --- | --- | --- |
+| External referrer, or empty referrer with an item ID | `deep-link` | One item free, no prompt |
+| Referrer within the site's search or explore routes | `in-app-search` | One item free, no prompt |
+| No referrer and no item ID, or referrer is the feed itself | `feed-entry` | Prompt fires |
+
+**Provenance fails toward "legitimate".** Referrer is frequently empty — links
+opened from another application, or from a messaging app, often arrive with
+nothing. An uncertain arrival is treated as a deep link and is not prompted.
+This deliberately under-prompts; the model backstop is what catches the feed
+entries that slip through.
+
+A deep-link or in-app-search visit becomes a `feed-entry` session on the **first
+advance past the arrival item**. That is the rule that keeps "a friend's link
+still works" from becoming an unlimited bypass.
+
+## The prompt
+
+Two buttons, no free text, no duration picker:
+
+- **"Doomscrolling — give me 5 minutes"** → starts a budget
+- **"Looking for something"** → no timer, model keeps watching
+
+Rationale for the constraint: free text costs a second of inference before the
+person can proceed and can be misread; a duration picker invites negotiating
+upward at the exact moment the limit is least wanted.
+
+The prompt appears only on `feed-entry` arrivals, and at most once per cooldown
+per site, so it stays something read rather than reflex-dismissed.
+
+## Budget and the feed wall
+
+A doomscroll declaration grants the configured budget, default 5 minutes,
+counted against the same usage accounting already in place.
+
+When the budget is spent, a **feed wall** covers the feed on the next advance:
+a full-page overlay whose only action is Leave. It is behavioral rather than a
+`declarativeNetRequest` block, because a URL block cannot distinguish a feed
+swipe from a friend's link — both are `/reels/<id>`. That is an accepted
+trade-off: the wall stops a reflex, not a determined person, and it is what
+keeps deep links working.
+
+A walled site still admits deep links, each getting its single item.
+
+## The model's role
+
+The model receives the same aggregate statistics as before, plus the
+declaration, and answers one question: does the behavior match what was
+declared?
+
+- Declared **doomscrolling** → the budget governs. The model may *veto* an
+  intervention when behavior looks genuinely deliberate.
+- Declared **looking for something** → no timer, but the model may **end the
+  session** and raise the wall when behavior clearly contradicts the
+  declaration. This requires `confidence >= 0.8`, a deliberately higher bar
+  than the 0.5 used for vetoes, because here the model causes enforcement
+  rather than preventing it.
+- **Deep-link single items are never touched by the model.**
 
 ## Data contract
 
-Per-item engagement, collected in the content script:
+Per-item engagement collected in the content script: `dwellMs`,
+`playedFraction`, `replayCount`, `unmuted`, `manuallyPaused`, `advancedBy`
+(`scroll` | `click` | `auto`).
 
-| Field | Meaning |
-| --- | --- |
-| `dwellMs` | time the item was current |
-| `playedFraction` | furthest playback point ÷ duration |
-| `replayCount` | playhead jumping backwards |
-| `unmuted` | audio was turned on |
-| `manuallyPaused` | playback paused by hand |
-| `advancedBy` | `scroll` \| `click` \| `auto` |
-
-The worker aggregates a session into the **complete** prompt payload:
+The complete prompt payload:
 
 ```json
 {
-  "site": "youtube-shorts",
+  "site": "instagram-reels",
+  "declaredIntent": "purposeful",
+  "entryKind": "feed-entry",
   "sessionMinutes": 6.2,
   "itemCount": 24,
   "medianDwellSeconds": 7.4,
@@ -118,93 +140,106 @@ The worker aggregates a session into the **complete** prompt payload:
 }
 ```
 
-Nothing else is sent. A leaked prompt reveals scroll statistics and nothing
-about what was watched.
+No titles, no captions, no on-screen text, no URLs beyond the site key, no
+identifiers. A leaked prompt reveals scroll statistics and the button that was
+pressed — nothing about what was watched.
 
-Response, schema-constrained:
+Schema-constrained response:
 
 ```json
-{ "verdict": "intervene", "confidence": 0.0, "reason": "short string" }
+{ "verdict": "matches", "confidence": 0.0, "reason": "short string" }
 ```
 
-`verdict` is one of `intervene` or `veto`. `reason` is capped at 120 characters
-and stored with the intervention record so the review list shows when the model
-overruled the heuristic.
-
-A veto is honoured only when `confidence` is at least `0.5`. Below that the
-model is treated as undecided and the heuristic decision stands — an uncertain
-model must not be the reason an intervention silently disappears.
-
-The payload above is the passive case: 24 items, 7s median dwell, 31% median
-completion, nothing unmuted. Inverted — 4 items, 45s dwell, 95% completion,
-unmuted — the model should veto, where the current counter still fires.
+`verdict` is one of `matches` or `contradicts`. `reason` is capped at 120
+characters and stored with the intervention record, so the review list shows
+when the model overrode a declaration.
 
 ## Components
 
 | Path | Responsibility |
 | --- | --- |
-| `src/content/engagement.ts` | Per-item engagement collection for video feeds |
-| `src/engine/session-summary.ts` | Pure aggregation of records into the payload |
+| `src/content/entry-provenance.ts` | Classify arrival from referrer and URL shape |
+| `src/content/engagement.ts` | Per-item engagement collection |
+| `src/content/intent-prompt.ts` | The two-button dialog and the feed wall |
+| `src/engine/session-summary.ts` | Pure aggregation into the payload |
+| `src/engine/declaration.ts` | Pure budget and session-type state machine |
 | `src/offscreen/index.html` | Offscreen host document |
 | `src/offscreen/classifier.ts` | Owns the warm session, answers classify requests |
-| `src/background/classifier-client.ts` | Worker side: ensure offscreen, timeout, fall back |
+| `src/background/classifier-client.ts` | Ensure offscreen, timeout, fall back |
 
-`src/background/service-worker.ts` gains one call between the heuristic
-decision and `enforce`. `manifest.config.ts` gains the `offscreen` permission.
+`manifest.config.ts` gains the `offscreen` permission. Storage gains a sixth
+key, `declarations`, holding `{ site, intent, entryKind, startedAt, expiresAt }`
+so a declaration survives service-worker teardown.
 
-## Lifecycle
+## Environment facts
 
-The worker creates the offscreen document lazily on first classification, and
-only when `availability()` is not `'unavailable'`. The document creates one
-session and keeps it warm across worker teardowns — the MV3 worker dies roughly
-every 30 seconds, and re-creating a session per check would exceed the latency
-budget. The document closes after several minutes idle.
+Verified against Chrome documentation and the target machine on 2026-07-31:
+
+- Chrome 138+, with `chrome://flags/#prompt-api-for-gemini-nano` Enabled.
+- Hardware: >4GB VRAM, or 16GB RAM with 4+ cores; ~22GB free disk; macOS 13+.
+  One-time ~2GB download performed by Chrome, not by this code.
+- **The Prompt API is unavailable in workers**, so it cannot run in the MV3
+  service worker. An offscreen document is required, and it keeps one session
+  warm across worker teardowns.
+- `responseConstraint` accepts a JSON Schema, so output is schema-bound rather
+  than parsed from free text.
+- `create()` must declare an output language or Chrome degrades output quality
+  and safety attestation. Pass
+  `expectedOutputs: [{ type: 'text', languages: ['en'] }]`.
+- On the target machine `await LanguageModel.availability()` returns
+  `'available'`.
 
 ## Failure modes
 
 | Condition | Behaviour |
 | --- | --- |
-| `LanguageModel` undefined | Never create offscreen; heuristic only |
-| `availability()` is `unavailable` | Same |
+| `LanguageModel` undefined or `unavailable` | Declarations and budgets still work; no model override |
 | Model downloading | Treated as unavailable until ready |
 | `create()` throws | Classifier disabled for the session |
-| Prompt exceeds 1.5s | Heuristic decision stands |
-| Output fails the schema | Heuristic decision stands |
+| Prompt exceeds 1.5s | Declaration governs unchanged |
+| Output fails the schema | Declaration governs unchanged |
+| Provenance ambiguous | Treated as a deep link — no prompt, no wall |
+| Prompt dismissed without an answer | Treated as "looking for something" |
 
-## Settings
-
-One Options toggle, off by default: *"Use on-device AI to double-check
-interventions."* It displays live availability, so an absent model is visible
-rather than silent.
+Every path leaves the person less restricted, never more.
 
 ## Testing
 
-- **Aggregation** — engagement records to payload, pure, no mocks.
-- **Classifier client** — stubbed `LanguageModel`: verdict parsing, timeout
-  fallback, malformed output fallback, and that `unavailable` never creates an
-  offscreen document.
-- **Worker integration** — a `veto` drops enforcement; a model error still
-  enforces.
-- **Privacy** — `tests/privacy-boundary.test.ts` passes unchanged, plus a new
-  assertion that the prompt payload contains no page-derived strings, so the
-  "how, never what" boundary is enforced by a test rather than by care.
-- **Manual** — additions to `docs/manual-test-checklist.md`: model absent
-  behaves exactly as today; a veto is visible in the review list; enforcement
-  is never delayed perceptibly.
+- **Provenance** — referrer and URL-shape table, pure, covering the empty
+  referrer case explicitly.
+- **Declaration state machine** — budget expiry, deep link converting to a feed
+  session on first advance, cooldown suppressing repeat prompts.
+- **Aggregation** — engagement records to payload, pure.
+- **Classifier client** — stubbed `LanguageModel`: verdict parsing, the 0.5 and
+  0.8 confidence gates, timeout fallback, malformed output fallback, and that
+  `unavailable` never creates an offscreen document.
+- **Worker integration** — a `contradicts` at high confidence raises the wall; a
+  model error never does; a deep-link item is never walled.
+- **Privacy** — `tests/privacy-boundary.test.ts` passes unchanged, plus an
+  assertion that the payload contains no page-derived strings.
+- **Manual** — additions to `docs/manual-test-checklist.md`: prompt appears on
+  feed entry and not on a pasted link; budget expiry raises the wall; a link
+  still opens while walled; advancing past that item re-walls.
 
 ## Open risks
 
-1. **Offscreen `reasons` enum has no AI value.** The closest existing reason
-   will be chosen and verified during implementation rather than guessed here.
-2. **A small on-device model may be unreliable at this judgment.** Veto-only
-   means a bad model degrades to current behaviour rather than causing harm,
-   but "the model is right more often than the counter" is a hypothesis. The
-   existing accurate/inaccurate feedback buttons are how it gets tested.
-3. **Setup burden.** The flag requirement makes this impractical to distribute
-   to anyone else without instructions.
+1. **Provenance is best-effort.** Empty referrers make some feed entries look
+   like deep links. Under-prompting is the deliberate choice; the model
+   backstop absorbs it.
+2. **The wall is dismissible.** Leaving and returning gets past it. Accepted:
+   a hard block would break the deep-link case.
+3. **The model can now cause enforcement.** Mitigated by the 0.8 threshold, by
+   never touching deep-link items, and by every failure path favouring the
+   person.
+4. **The offscreen `reasons` enum has no AI value.** The closest reason will be
+   chosen and verified during implementation.
+5. **A small on-device model may be unreliable at this judgment.** The
+   accurate/inaccurate feedback buttons are how that gets measured.
+6. **Setup burden.** The Chrome flag makes this impractical to distribute
+   without instructions.
 
 ## Explicitly out of scope
 
-X timeline classification; training or fine-tuning any model; using the stored
-feedback to adjust behaviour automatically; cloud inference of any kind;
-replacing the heuristic outright.
+X timeline; training or fine-tuning; using stored feedback to adjust behaviour
+automatically; cloud inference; replacing the heuristic outright; any hard
+network-level block of the feed.
