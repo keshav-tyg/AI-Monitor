@@ -144,35 +144,6 @@ it('does not wall a declared purposeful session below the confidence threshold',
   );
 });
 
-it('does not let the legacy allowance ladder override a purposeful declaration', async () => {
-  await saveSettings({
-    enabled: true,
-    rules: {
-      ...DEFAULT_SETTINGS.rules,
-      'instagram-reels': {
-        ...DEFAULT_SETTINGS.rules['instagram-reels'],
-        enabled: true,
-        dailyAllowanceMinutes: 1,
-        interventions: ['pause'],
-      },
-    },
-  });
-  await arrive();
-  await declare('purposeful');
-  await addUsage('instagram-reels', 60_000, Date.now());
-  (chrome.tabs.sendMessage as unknown as ReturnType<typeof vi.fn>).mockClear();
-
-  await routeForTest(
-    { type: 'event', event: { site: 'instagram-reels', kind: 'content-advance', at: Date.now() } },
-    72,
-  );
-
-  expect(chrome.tabs.sendMessage).not.toHaveBeenCalledWith(
-    72,
-    expect.objectContaining({ type: 'pause' }),
-  );
-});
-
 it('fails open when classification rejects', async () => {
   classifyMock.mockRejectedValue(new Error('model stopped'));
   await arrive();

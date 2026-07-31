@@ -3,7 +3,6 @@ import type { InterventionDecision, InterventionKind } from '../shared/types';
 /** Accepts a `SiteRule` or any readonly-literal equivalent. */
 export interface RuleLike {
   enabled: boolean;
-  dailyAllowanceMinutes: number;
   warningScore: number;
   gracePeriodSeconds: number;
   interventions: readonly InterventionKind[];
@@ -13,7 +12,6 @@ export interface RuleLike {
 export interface RuleInput {
   rule: RuleLike;
   score: number;
-  usageMs: number;
   now: number;
   /** When the notify step fired for this session, if it has. */
   warnedAt?: number;
@@ -23,29 +21,19 @@ export interface RuleInput {
   reason?: string;
 }
 
-export const ALLOWANCE_REASON = 'Daily allowance reached';
-
 /**
  * Pure decision function. Every uncertain path returns `none` so that an
  * unknown state can never escalate into closing a tab or blocking a site.
  */
 export function nextIntervention(input: RuleInput): InterventionDecision {
-  const { rule, score, usageMs, now, warnedAt, pauseShownAt, reason } = input;
+  const { rule, score, now, warnedAt, pauseShownAt, reason } = input;
 
   if (!rule.enabled) return { kind: 'none' };
   if (rule.interventions.length === 0) return { kind: 'none' };
 
-  const allowanceMs = rule.dailyAllowanceMinutes * 60_000;
-  const allowanceExhausted = usageMs >= allowanceMs;
+  if (score < rule.warningScore) return { kind: 'none' };
 
-  // Either trigger can open the ladder, and both walk the same steps. Spending
-  // an allowance used to jump straight to the harshest configured action, so a
-  // tab could vanish with no warning at all.
-  if (!allowanceExhausted && score < rule.warningScore) return { kind: 'none' };
-
-  const explanation = allowanceExhausted
-    ? ALLOWANCE_REASON
-    : (reason ?? 'Sustained passive scrolling detected');
+  const explanation = reason ?? 'Sustained passive scrolling detected';
   const graceMs = rule.gracePeriodSeconds * 1_000;
   const [first, second, third] = rule.interventions;
 

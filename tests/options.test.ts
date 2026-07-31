@@ -48,3 +48,10 @@ it('lets a person configure the doomscroll session budget before saving', async 
     }),
   );
 });
+
+it('does not expose the removed daily allowance control', async () => {
+  document.body.innerHTML = '<main id="app"></main>';
+  await renderOptions(document.querySelector('#app')!);
+
+  expect(document.querySelector('[data-field="dailyAllowanceMinutes"]')).toBeNull();
+});
