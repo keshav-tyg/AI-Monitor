@@ -128,6 +128,12 @@ export async function getReturnPause(
   return active.find((entry) => entry.site === site);
 }
 
+/** A return pause is consumed by being shown once. */
+export async function clearReturnPause(site: SiteId): Promise<void> {
+  const pauses = await readKey<ReturnPauseEntry[]>(KEY_RETURN_PAUSES, []);
+  await writeKey(KEY_RETURN_PAUSES, pauses.filter((entry) => entry.site !== site));
+}
+
 export async function saveReturnPause(entry: ReturnPauseEntry): Promise<void> {
   const pauses = await readKey<ReturnPauseEntry[]>(KEY_RETURN_PAUSES, []);
   await writeKey(KEY_RETURN_PAUSES, [...pauses.filter((item) => item.site !== entry.site), entry]);
