@@ -1,4 +1,5 @@
 import { SUPPORTED_SITES } from '../shared/constants';
+import { formatDuration } from '../shared/time';
 import type { BackgroundResponse, SiteId, SiteStatus } from '../shared/types';
 
 const POPUP_REFRESH_MS = 1_000;
@@ -32,6 +33,39 @@ function statusText(site: SiteStatus): string {
   return site.enabled ? ' rule active' : ' rule disabled';
 }
 
+function sessionText(site: SiteStatus): string | undefined {
+  if (!site.enabled) return undefined;
+  if (!site.session) return site.active ? ' · Choose an intent' : undefined;
+  if (site.session.intent === 'purposeful') return ' · No time limit';
+
+  const usedMs = site.session.usedMs ?? 0;
+  const budgetMinutes = site.session.budgetMinutes ?? 0;
+  return ` · ${formatDuration(usedMs)} of ${budgetMinutes} min session`;
+}
+
+function syncSessionState(row: Element, site: SiteStatus): void {
+  const marker = row.querySelector('[data-session-marker]');
+  if (site.active && !marker) {
+    const nextMarker = element('em', ' · in a session now');
+    nextMarker.dataset['sessionMarker'] = '';
+    row.append(nextMarker);
+  } else if (!site.active) {
+    marker?.remove();
+  }
+
+  const text = sessionText(site);
+  const timer = row.querySelector('[data-session-status]');
+  if (!text) {
+    timer?.remove();
+  } else if (timer) {
+    timer.textContent = text;
+  } else {
+    const nextTimer = element('span', text);
+    nextTimer.dataset['sessionStatus'] = '';
+    row.append(nextTimer);
+  }
+}
+
 /**
  * Updates only the numbers that change. Rebuilding the whole subtree once a
  * second detached the buttons mid-interaction, so a click that raced the
@@ -48,14 +82,7 @@ function updateUsageInPlace(root: Element, status: BackgroundResponse | undefine
     if (!row || !slot) return false;
     slot.textContent = statusText(site);
 
-    const session = row.querySelector('[data-session]');
-    if (site.active && !session) {
-      const marker = element('em', ' · in a session now');
-      marker.dataset['session'] = '';
-      row.append(marker);
-    } else if (!site.active) {
-      session?.remove();
-    }
+    syncSessionState(row, site);
   }
   return status.sites.length > 0;
 }
@@ -91,8 +118,14 @@ export async function renderPopup(
     // Session status appears only while a session actually exists.
     if (site.active) {
       const session = element('em', ' · in a session now');
-      session.dataset['session'] = '';
+      session.dataset['sessionMarker'] = '';
       row.append(session);
+    }
+    const sessionStatus = sessionText(site);
+    if (sessionStatus) {
+      const timer = element('span', sessionStatus);
+      timer.dataset['sessionStatus'] = '';
+      row.append(timer);
     }
     list.append(row);
   }

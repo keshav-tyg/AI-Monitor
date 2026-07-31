@@ -451,17 +451,28 @@ export async function handleEvent(
   return decision;
 }
 
-async function buildStatus(): Promise<BackgroundResponse> {
+async function buildStatus(now: number): Promise<BackgroundResponse> {
   const settings = await getSettings();
   const activeSites = new Set([...sessions.values()].map((session) => session.site));
 
   const sites: SiteStatus[] = [];
   for (const site of SITE_IDS) {
     const rule = settings.rules[site];
+    const declaration = await getDeclaration(site, now);
+    const session = declaration
+      ? declaration.intent === 'doomscroll'
+        ? {
+            intent: declaration.intent,
+            usedMs: Math.max(0, (await getUsage(site, now)) - declaration.usageAtStartMs),
+            budgetMinutes: rule.doomscrollBudgetMinutes,
+          }
+        : { intent: declaration.intent }
+      : undefined;
     sites.push({
       site,
       enabled: rule.enabled,
       active: activeSites.has(site),
+      session,
     });
   }
   return { ok: true, type: 'status', enabled: settings.enabled, sites, settings };
@@ -475,7 +486,7 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
       return { ok: true, type: 'ack' };
     }
     case 'get-status':
-      return buildStatus();
+      return buildStatus(Date.now());
     case 'save-settings':
       await saveSettings(request.settings as Settings);
       return { ok: true, type: 'settings', settings: await getSettings() };
