@@ -95,7 +95,6 @@ export const CLASSIFIER = {
 } as const;
 
 export const INTENT_PROMPT_QUESTION = 'Hey, what are we doing here?';
-export const PURPOSEFUL_BUTTON_LABEL = 'Looking for something';
 
 /** The budget is configurable, so the button and the wall must quote the same
  *  number the rule actually grants rather than a hard-coded five. */

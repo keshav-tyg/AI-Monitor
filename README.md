@@ -28,7 +28,7 @@ disabled — the extension enforces nothing until you ask it to.
 For the optional on-device behaviour check, use Chrome 138+ and enable
 `chrome://flags/#prompt-api-for-gemini-nano`. Chrome may download its local
 model once. If it is unavailable, the declared-intent budget still works; the
-model simply cannot override it or catch a contradictory declaration.
+model simply cannot veto a budget wall that looks deliberate.
 
 ## What it watches
 
@@ -45,12 +45,11 @@ other website — produces no events and no enforcement.
 
 ## How intent-aware sessions work
 
-The extension treats your answer to a two-button question as the primary
-control, not a hidden score. Entering a feed asks:
+The extension treats an explicit start as the primary control, not a hidden
+score. Entering a feed asks:
 
 - **Doomscrolling — give me N minutes** — grants the per-site doomscroll budget
   you set in Options (five minutes by default).
-- **Looking for something** — starts no timer.
 
 A direct Reel/Short link or in-app search gets one item without a prompt. The
 first advance past that item becomes a feed session. Ambiguous arrivals are
@@ -64,9 +63,8 @@ declared session.
 The optional local Chrome model sees only aggregate behaviour statistics —
 item dwell time, completion, replays, mute/pause state, and aggregate action
 counts. It never sees titles, captions, post text, URLs, or identifiers. It can
-veto a doomscroll wall when behaviour looks deliberate, or stop a declared
-purposeful session only at high confidence. Any model failure leaves you less
-restricted: your declaration governs unchanged.
+veto a doomscroll wall when behaviour looks deliberate. Any model failure
+leaves you less restricted: your declaration governs unchanged.
 
 The original score ladder still provides the configurable notice/pause/close
 and block interventions for sustained passive use. Its transparent signals are:
