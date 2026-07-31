@@ -19,6 +19,7 @@ const INTERVENTION_LABELS: Record<InterventionKind, string> = {
 
 const NUMBER_FIELDS = [
   { field: 'dailyAllowanceMinutes', label: 'Daily allowance (minutes)', min: 1, max: 240 },
+  { field: 'doomscrollBudgetMinutes', label: 'Doomscroll session budget (minutes)', min: 1, max: 60 },
   { field: 'warningScore', label: 'Warning score', min: 1, max: 50 },
   { field: 'gracePeriodSeconds', label: 'Grace period (seconds)', min: 0, max: 600 },
 ] as const;
@@ -66,7 +67,7 @@ function cloneSettings(settings: Settings): Settings {
 function describe(rule: SiteRule): string {
   if (!rule.enabled) return 'Disabled — nothing is enforced for this site.';
   const steps = rule.interventions.map((kind) => INTERVENTION_LABELS[kind]).join(', then ');
-  return `After ${rule.warningScore} confidence points, or ${rule.dailyAllowanceMinutes} minutes today: ${steps || 'nothing configured'}. Grace period ${rule.gracePeriodSeconds}s.`;
+  return `A declared doomscroll session gets ${rule.doomscrollBudgetMinutes} minutes. After ${rule.warningScore} confidence points, or ${rule.dailyAllowanceMinutes} minutes today: ${steps || 'nothing configured'}. Grace period ${rule.gracePeriodSeconds}s.`;
 }
 
 export async function renderOptions(root: Element): Promise<void> {

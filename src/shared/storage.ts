@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS, MAX_INTERVENTION_RECORDS, SITE_IDS } from './constants';
 import { todayKey } from './time';
 import type {
+  DeclarationEntry,
   InterventionFeedback,
   InterventionRecord,
   Settings,
@@ -18,6 +19,7 @@ const KEY_USAGE = 'usage';
 const KEY_INTERVENTIONS = 'interventions';
 const KEY_BLOCKS = 'blocks';
 const KEY_RETURN_PAUSES = 'return-pauses';
+const KEY_DECLARATIONS = 'declarations';
 
 interface UsageEntry {
   day: string;
@@ -137,4 +139,29 @@ export async function clearReturnPause(site: SiteId): Promise<void> {
 export async function saveReturnPause(entry: ReturnPauseEntry): Promise<void> {
   const pauses = await readKey<ReturnPauseEntry[]>(KEY_RETURN_PAUSES, []);
   await writeKey(KEY_RETURN_PAUSES, [...pauses.filter((item) => item.site !== entry.site), entry]);
+}
+
+/**
+ * A declaration must outlive the service worker: without persistence, a worker
+ * teardown mid-session would silently hand back a fresh budget. Expired entries
+ * are pruned on read, exactly as return pauses are.
+ */
+export async function getDeclaration(
+  site: SiteId,
+  now: number = Date.now(),
+): Promise<DeclarationEntry | undefined> {
+  const stored = await readKey<DeclarationEntry[]>(KEY_DECLARATIONS, []);
+  const active = stored.filter((entry) => entry.expiresAt > now);
+  if (active.length !== stored.length) await writeKey(KEY_DECLARATIONS, active);
+  return active.find((entry) => entry.site === site);
+}
+
+export async function saveDeclaration(entry: DeclarationEntry): Promise<void> {
+  const stored = await readKey<DeclarationEntry[]>(KEY_DECLARATIONS, []);
+  await writeKey(KEY_DECLARATIONS, [...stored.filter((item) => item.site !== entry.site), entry]);
+}
+
+export async function clearDeclaration(site: SiteId): Promise<void> {
+  const stored = await readKey<DeclarationEntry[]>(KEY_DECLARATIONS, []);
+  await writeKey(KEY_DECLARATIONS, stored.filter((entry) => entry.site !== site));
 }

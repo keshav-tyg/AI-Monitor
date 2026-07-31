@@ -33,8 +33,78 @@ export interface SiteRule {
   dailyAllowanceMinutes: number;
   warningScore: number;
   gracePeriodSeconds: number;
+  /** Granted by a "doomscrolling" declaration, spent against foreground usage. */
+  doomscrollBudgetMinutes: number;
   interventions: InterventionKind[];
   blockUntil: 'tomorrow';
+}
+
+/**
+ * How the person reached the feed. Deterministic — referrer and URL shape only,
+ * never the model. An uncertain arrival is a `deep-link`, which is the least
+ * restrictive answer.
+ */
+export type EntryKind = 'deep-link' | 'in-app-search' | 'feed-entry';
+
+/** The answer to "what are we doing here?". Two buttons, nothing else. */
+export type DeclaredIntent = 'doomscroll' | 'purposeful';
+
+/** What moved the feed on. `auto` means no gesture was attributable. */
+export type AdvanceSource = 'scroll' | 'click' | 'auto';
+
+/** One feed item's engagement. Numbers and flags only — never page content. */
+export interface EngagementRecord {
+  dwellMs: number;
+  playedFraction: number;
+  replayCount: number;
+  unmuted: boolean;
+  manuallyPaused: boolean;
+  advancedBy: AdvanceSource;
+}
+
+/**
+ * The complete prompt payload. A leak reveals scroll statistics and the button
+ * that was pressed — nothing about what was watched.
+ */
+export interface ClassifierPayload {
+  site: SiteId;
+  declaredIntent: DeclaredIntent;
+  entryKind: EntryKind;
+  sessionMinutes: number;
+  itemCount: number;
+  medianDwellSeconds: number;
+  medianCompletion: number;
+  fullyWatchedCount: number;
+  unmutedCount: number;
+  replayCount: number;
+  purposefulActionCount: number;
+  scrollBurstCount: number;
+}
+
+/** Does the behaviour match what was declared? */
+export type ClassifierVerdict = 'matches' | 'contradicts';
+
+export interface ClassifierResult {
+  verdict: ClassifierVerdict;
+  confidence: number;
+  /** Capped at 120 characters and stored with the intervention record. */
+  reason: string;
+}
+
+/**
+ * A declaration outlives the service worker, so a budget cannot be reset by a
+ * worker teardown. `expiresAt` is the cooldown horizon: until it passes, the
+ * prompt does not fire again for this site.
+ */
+export interface DeclarationEntry {
+  site: SiteId;
+  intent: DeclaredIntent;
+  entryKind: EntryKind;
+  startedAt: number;
+  expiresAt: number;
+  /** Budget origin. The budget is spent against usage, not wall-clock time. */
+  usageAtStartMs: number;
+  walledAt?: number;
 }
 
 export interface Settings {
@@ -91,7 +161,11 @@ export type BackgroundRequest =
   | { type: 'get-interventions' }
   | { type: 'set-feedback'; id: string; feedback: InterventionFeedback }
   | { type: 'leave-feed'; site: SiteId; reason: string }
-  | { type: 'temporary-continue'; site: SiteId };
+  | { type: 'temporary-continue'; site: SiteId }
+  | { type: 'arrive'; site: SiteId; entryKind: EntryKind }
+  | { type: 'declare-intent'; site: SiteId; intent: DeclaredIntent }
+  | { type: 'engagement'; site: SiteId; record: EngagementRecord }
+  | { type: 'wall-leave'; site: SiteId };
 
 export type BackgroundResponse =
   | { ok: true; type: 'status'; enabled: boolean; sites: SiteStatus[]; settings: Settings }
@@ -103,4 +177,6 @@ export type BackgroundResponse =
 /** Background -> content script. The content script renders nothing else. */
 export type ContentCommand =
   | { type: 'notify'; site: SiteId; reason: string }
-  | { type: 'pause'; site: SiteId; reason: string; allowContinue: boolean };
+  | { type: 'pause'; site: SiteId; reason: string; allowContinue: boolean }
+  | { type: 'prompt-intent'; site: SiteId; budgetMinutes: number }
+  | { type: 'wall'; site: SiteId; reason: string };

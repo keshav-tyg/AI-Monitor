@@ -25,6 +25,11 @@ Then load it into Chrome:
 Open the extension's **Options** page and turn on protection. Every rule ships
 disabled — the extension enforces nothing until you ask it to.
 
+For the optional on-device behaviour check, use Chrome 138+ and enable
+`chrome://flags/#prompt-api-for-gemini-nano`. Chrome may download its local
+model once. If it is unavailable, the declared-intent budget still works; the
+model simply cannot override it or catch a contradictory declaration.
+
 ## What it watches
 
 Only these three views, and nothing else:
@@ -38,10 +43,33 @@ Only these three views, and nothing else:
 Any other page — a profile, a search, a DM inbox, a normal YouTube video, any
 other website — produces no events and no enforcement.
 
-## How detection works
+## How intent-aware sessions work
 
-There is no model and no guesswork you cannot inspect. Confidence is a running
-score built from two signals:
+The extension treats your answer to a two-button question as the primary
+control, not a hidden score. Entering a feed asks:
+
+- **Doomscrolling — give me N minutes** — grants the per-site doomscroll budget
+  you set in Options (five minutes by default).
+- **Looking for something** — starts no timer.
+
+A direct Reel/Short link or in-app search gets one item without a prompt. The
+first advance past that item becomes a feed session. Ambiguous arrivals are
+always treated as direct links, which is the less restrictive choice.
+
+When a declared doomscroll budget is spent, the next feed advance raises a
+full-page wall whose only action is Leave. This is an overlay rather than a URL
+block, so a friend's direct link can still open. A wall stays up for that
+declared session.
+
+The optional local Chrome model sees only aggregate behaviour statistics —
+item dwell time, completion, replays, mute/pause state, and aggregate action
+counts. It never sees titles, captions, post text, URLs, or identifiers. It can
+veto a doomscroll wall when behaviour looks deliberate, or stop a declared
+purposeful session only at high confidence. Any model failure leaves you less
+restricted: your declaration governs unchanged.
+
+The original score ladder still provides the configurable notice/pause/close
+and block interventions for sustained passive use. Its transparent signals are:
 
 - **content advance** (+2) — the media source changed, or the timeline moved a
   full viewport
@@ -98,13 +126,15 @@ Concretely, it **does not**:
 - watch any other application, browser tab, or website
 - sync anything: storage is `chrome.storage.local`, never `sync`
 
-What it **does** store locally, in four keys:
+What it **does** store locally, in six keys:
 
 - `settings` — your rules
 - `usage` — minutes per feed for the current local day
 - `interventions` — up to 200 past interventions with their plain-language
   reasons, plus your accurate/inaccurate feedback
 - `blocks` — which feed is blocked and until when
+- `return-pauses` — a pause that should be shown again if the feed is reopened
+- `declarations` — the current per-site intent and its local budget state
 
 Uninstalling the extension removes all of it.
 

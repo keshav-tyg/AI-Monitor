@@ -33,6 +33,7 @@ const DEFAULT_RULE: SiteRule = {
   dailyAllowanceMinutes: 15,
   warningScore: 10,
   gracePeriodSeconds: 60,
+  doomscrollBudgetMinutes: 5,
   interventions: ['notify', 'pause', 'close-tab', 'block'],
   blockUntil: 'tomorrow',
 };
@@ -68,6 +69,47 @@ export const HEARTBEAT_INTERVAL_MS = 1_000;
 export const TEMPORARY_CONTINUE_MS = 300_000;
 
 export const MAX_INTERVENTION_RECORDS = 200;
+
+export const DECLARATION = {
+  /** One prompt per site per cooldown, so it stays read rather than reflexed. */
+  cooldownMs: 1_800_000,
+  /** A deep-link visit becomes a feed session on the first advance past it. */
+  freeItemsOnDeepLink: 1,
+  /** Dismissing the prompt without answering means "looking for something". */
+  defaultIntent: 'purposeful',
+} as const;
+
+export const CLASSIFIER = {
+  /** A veto only prevents enforcement, so it costs less confidence. */
+  vetoConfidence: 0.5,
+  /** Ending a declared purposeful session *causes* enforcement. Higher bar. */
+  contradictConfidence: 0.8,
+  /** Past this the declaration governs unchanged. */
+  timeoutMs: 1_500,
+  /** Nothing is asked about a session too short to have a shape. */
+  minimumItems: 5,
+  minimumIntervalMs: 20_000,
+  maximumReasonLength: 120,
+  /** `playedFraction` at or above this counts as fully watched. */
+  fullyWatchedFraction: 0.9,
+  offscreenUrl: 'src/offscreen/index.html',
+} as const;
+
+export const INTENT_PROMPT_QUESTION = 'Hey, what are we doing here?';
+export const PURPOSEFUL_BUTTON_LABEL = 'Looking for something';
+
+/** The budget is configurable, so the button and the wall must quote the same
+ *  number the rule actually grants rather than a hard-coded five. */
+export function doomscrollButtonLabel(minutes: number): string {
+  return `Doomscrolling — give me ${minutes} minutes`;
+}
+
+export function budgetSpentReason(minutes: number): string {
+  return `The ${minutes} minutes you asked for are up`;
+}
+
+/** Shown when a wall that was already raised is simply still raised. */
+export const WALL_HELD_REASON = 'This feed is walled for the rest of this session';
 
 export const PRIVACY_PROMISE =
   'Nothing leaves this device. This extension does not record screenshots, upload browsing history, or send behavioral data to a server.';

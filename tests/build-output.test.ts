@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 interface BuiltManifest {
   background: { service_worker: string };
@@ -31,4 +31,8 @@ it('does not register the content script bundle as the service worker', () => {
 it('ships a service worker bundle that never touches window', () => {
   const source = readFileSync(`dist/${workerChunk()}`, 'utf8');
   expect(source).not.toMatch(/\bwindow\b/);
+});
+
+it('ships the local offscreen document used by the classifier', () => {
+  expect(existsSync('dist/src/offscreen/index.html')).toBe(true);
 });
