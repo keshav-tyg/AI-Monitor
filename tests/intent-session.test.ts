@@ -105,6 +105,23 @@ it('walls a spent doomscroll budget once and records one intervention', async ()
   expect(await listInterventions()).toHaveLength(1);
 });
 
+it('reports elapsed doomscroll session time to the popup', async () => {
+  await arrive();
+  await declare('doomscroll');
+  await addUsage('instagram-reels', 80_000, Date.now());
+
+  const response = await routeForTest({ type: 'get-status' }, undefined);
+  const reels = response.ok && response.type === 'status'
+    ? response.sites.find((site) => site.site === 'instagram-reels')
+    : undefined;
+
+  expect(reels?.session).toEqual({
+    intent: 'doomscroll',
+    usedMs: 80_000,
+    budgetMinutes: 5,
+  });
+});
+
 it('walls a declared purposeful session only for a high-confidence contradiction', async () => {
   classifyMock.mockResolvedValue({
     verdict: 'contradicts',

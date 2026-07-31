@@ -147,6 +147,12 @@ export interface SiteStatus {
   site: SiteId;
   enabled: boolean;
   active: boolean;
+  /** The declared session controls the popup timer, never a daily allowance. */
+  session?: {
+    intent: DeclaredIntent;
+    usedMs?: number;
+    budgetMinutes?: number;
+  };
 }
 
 export type BackgroundRequest =
