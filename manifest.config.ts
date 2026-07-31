@@ -14,7 +14,7 @@ export default {
   version: '0.1.0',
   description:
     'Detects sustained passive feed use on this device and applies the intervention you configured. Nothing leaves this device.',
-  permissions: ['storage', 'tabs', 'declarativeNetRequest', 'notifications', 'alarms'],
+  permissions: ['storage', 'tabs', 'declarativeNetRequest', 'notifications', 'alarms', 'offscreen'],
   icons: { '128': 'icons/icon-128.png' },
   host_permissions: [
     '*://*.instagram.com/*',

@@ -7,7 +7,7 @@ describe('manifest privacy boundary', () => {
     // its expiry, because a blocked page loads no content script and so never
     // wakes the worker to clear the rule.
     expect(manifest.permissions).toEqual([
-      'storage', 'tabs', 'declarativeNetRequest', 'notifications', 'alarms',
+      'storage', 'tabs', 'declarativeNetRequest', 'notifications', 'alarms', 'offscreen',
     ]);
     expect(manifest.host_permissions).toEqual([
       '*://*.instagram.com/*', '*://x.com/*', '*://twitter.com/*', '*://*.youtube.com/*',
