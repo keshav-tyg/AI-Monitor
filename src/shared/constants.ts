@@ -30,7 +30,6 @@ export const SITE_IDS: readonly SiteId[] = SUPPORTED_SITES.map((site) => site.id
 /** Rules ship disabled: the extension enforces nothing until asked to. */
 const DEFAULT_RULE: SiteRule = {
   enabled: false,
-  dailyAllowanceMinutes: 15,
   warningScore: 10,
   gracePeriodSeconds: 60,
   doomscrollBudgetMinutes: 5,

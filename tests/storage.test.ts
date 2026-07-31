@@ -3,11 +3,13 @@ import {
   appendIntervention,
   clearDeclaration,
   getDeclaration,
+  getSettings,
   getUsage,
   listInterventions,
   saveDeclaration,
 } from '../src/shared/storage';
 import { installChromeStorageStub } from './chrome-storage';
+import { DEFAULT_SETTINGS } from '../src/shared/constants';
 import type { DeclarationEntry } from '../src/shared/types';
 
 beforeEach(() => {
@@ -27,6 +29,23 @@ function declaration(overrides: Partial<DeclarationEntry> = {}): DeclarationEntr
 }
 
 describe('local persistence', () => {
+  it('ignores a persisted legacy daily allowance field', async () => {
+    await chrome.storage.local.set({
+      settings: {
+        enabled: true,
+        rules: {
+          'instagram-reels': {
+            ...DEFAULT_SETTINGS.rules['instagram-reels'],
+            dailyAllowanceMinutes: 1,
+          },
+        },
+      },
+    });
+
+    const settings = await getSettings();
+    expect(settings.rules['instagram-reels']).not.toHaveProperty('dailyAllowanceMinutes');
+  });
+
   it('resets one site usage when the local day changes', async () => {
     await addUsage('instagram-reels', 120_000, Date.parse('2026-07-30T23:59:00'));
     expect(await getUsage('instagram-reels', Date.parse('2026-07-31T00:01:00'))).toBe(0);

@@ -92,14 +92,6 @@ step costs a full grace period, so stopping means you never see the next one:
 notify  →  (grace)  →  pause screen  →  (grace)  →  close tab
 ```
 
-Spending your daily allowance for a feed opens the same ladder, with "Daily
-allowance reached" as the reason. It does not skip ahead — you are always told
-before anything drastic happens.
-
-Note that a very short allowance makes the score path unreachable: scoring
-cannot begin until 120 seconds in a view, so an allowance under two minutes
-will always trigger first.
-
 ## Interventions
 
 | Intervention | What happens |
@@ -110,7 +102,7 @@ will always trigger first.
 | `block` | A narrow rule blocks that feed's paths until midnight tonight. |
 
 "Continue for 5 minutes" suppresses enforcement for that one tab only. It does
-not change your daily allowance and does not touch any block.
+not change a declared session budget or touch any block.
 
 ## Privacy, exactly
 

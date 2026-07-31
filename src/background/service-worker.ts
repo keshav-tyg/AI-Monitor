@@ -199,8 +199,6 @@ async function enforce(
 
   if (kind === 'close-tab') {
     await record(site, kind, reason, now);
-    // The stronger action is not lost when both are configured: allowance
-    // exhaustion installs the block alongside closing the tab.
     if (blockConfigured) await installBlock(site, nextLocalMidnight(now));
     sessions.delete(tabId);
     await chrome.tabs.remove(tabId);
@@ -437,11 +435,9 @@ export async function handleEvent(
     }
   }
 
-  const usageMs = await getUsage(event.site, now);
   const decision = nextIntervention({
     rule,
     score: session.score,
-    usageMs,
     now,
     warnedAt: session.warnedAt,
     pauseShownAt: session.pauseShownAt,
@@ -455,7 +451,7 @@ export async function handleEvent(
   return decision;
 }
 
-async function buildStatus(now: number): Promise<BackgroundResponse> {
+async function buildStatus(): Promise<BackgroundResponse> {
   const settings = await getSettings();
   const activeSites = new Set([...sessions.values()].map((session) => session.site));
 
@@ -465,8 +461,6 @@ async function buildStatus(now: number): Promise<BackgroundResponse> {
     sites.push({
       site,
       enabled: rule.enabled,
-      usedMs: await getUsage(site, now),
-      allowedMinutes: rule.dailyAllowanceMinutes,
       active: activeSites.has(site),
     });
   }
@@ -481,7 +475,7 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
       return { ok: true, type: 'ack' };
     }
     case 'get-status':
-      return buildStatus(Date.now());
+      return buildStatus();
     case 'save-settings':
       await saveSettings(request.settings as Settings);
       return { ok: true, type: 'settings', settings: await getSettings() };

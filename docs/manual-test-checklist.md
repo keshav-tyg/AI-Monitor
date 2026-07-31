@@ -65,10 +65,7 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
 - [ ] **Leave exits.** The overlay closes and the session resets.
 - [ ] **Continue for 5 minutes suppresses that tab only.** Enforcement stops in
       this tab for five minutes. Open the same feed in a second tab — it is
-      still enforced. Daily allowance is unchanged in the popup.
-- [ ] **Allowance exhaustion follows the configured action.** Set the allowance
-      to 1 minute, spend it, and confirm the action you configured is the one
-      that happens.
+      still enforced. It does not change the doomscroll session-budget setting.
 - [ ] **Close-tab closes only the originating tab.** With two feed tabs open,
       confirm the other survives.
 - [ ] **Blocks are narrow.** With a block active on Instagram Reels,
@@ -91,13 +88,12 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
 
 ## Interface
 
-- [ ] **Popup reports honestly.** Protection state, per-site used/allowed
-      minutes, and an active-session indicator that appears only during a live
-      session.
+- [ ] **Popup reports honestly.** Protection state, each site's rule state,
+      and an active-session indicator that appears only during a live session.
 - [ ] **Options requires an explicit save.** Toggle a rule, close the page
       without saving, reopen it — the change is gone.
-- [ ] **Validation blocks bad input.** Enter allowance `0`, warning score `99`,
-      grace `-1`, and an enabled rule with no interventions. Each shows an
+- [ ] **Validation blocks bad input.** Enter a session budget of `0`, warning
+      score `99`, grace `-1`, and an enabled rule with no interventions. Each shows an
       inline error and nothing persists.
 - [ ] **Feedback records.** Click Accurate and Inaccurate on review entries and
       confirm the choice survives a reload.

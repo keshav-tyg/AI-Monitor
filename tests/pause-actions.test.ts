@@ -44,7 +44,6 @@ it('reopens a left feed directly into its existing pause', async () => {
       'instagram-reels': {
         ...DEFAULT_SETTINGS.rules['instagram-reels'],
         enabled: true,
-        dailyAllowanceMinutes: 1,
         gracePeriodSeconds: 60,
         interventions: ['notify', 'pause', 'close-tab'],
       },
@@ -59,7 +58,7 @@ it('reopens a left feed directly into its existing pause', async () => {
 
   await dispatch(
     listener,
-    { type: 'leave-feed', site: 'instagram-reels', reason: 'Daily allowance reached' },
+    { type: 'leave-feed', site: 'instagram-reels', reason: 'Focus pause' },
     72,
   );
   await dispatch(
@@ -74,7 +73,7 @@ it('reopens a left feed directly into its existing pause', async () => {
   expect(spies.tabsSendMessage).toHaveBeenCalledWith(73, {
     type: 'pause',
     site: 'instagram-reels',
-    reason: 'Daily allowance reached',
+    reason: 'Focus pause',
     allowContinue: true,
   });
 });

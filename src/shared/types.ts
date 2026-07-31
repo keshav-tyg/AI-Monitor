@@ -30,7 +30,6 @@ export interface NormalizedEvent {
 
 export interface SiteRule {
   enabled: boolean;
-  dailyAllowanceMinutes: number;
   warningScore: number;
   gracePeriodSeconds: number;
   /** Granted by a "doomscrolling" declaration, spent against foreground usage. */
@@ -147,10 +146,6 @@ export type InterventionDecision =
 export interface SiteStatus {
   site: SiteId;
   enabled: boolean;
-  /** Raw milliseconds. Rounding to whole minutes here made a 1-minute
-   *  allowance read "0 of 1" until the instant it enforced. */
-  usedMs: number;
-  allowedMinutes: number;
   active: boolean;
 }
 

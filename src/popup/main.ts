@@ -1,5 +1,4 @@
 import { SUPPORTED_SITES } from '../shared/constants';
-import { formatDuration } from '../shared/time';
 import type { BackgroundResponse, SiteId, SiteStatus } from '../shared/types';
 
 const POPUP_REFRESH_MS = 1_000;
@@ -29,21 +28,8 @@ function labelFor(site: SiteId): string {
   return SUPPORTED_SITES.find((entry) => entry.id === site)?.label ?? site;
 }
 
-function usageMilliseconds(site: SiteStatus): number {
-  if (Number.isFinite(site.usedMs)) return site.usedMs;
-
-  // Chrome can briefly keep an older service worker alive after the popup
-  // bundle updates. Its former status contract used whole minutes.
-  const legacyMinutes = (site as SiteStatus & { usedMinutes?: unknown }).usedMinutes;
-  return typeof legacyMinutes === 'number' && Number.isFinite(legacyMinutes)
-    ? legacyMinutes * 60_000
-    : 0;
-}
-
-function usageText(site: SiteStatus): string {
-  return site.enabled
-    ? ` ${formatDuration(usageMilliseconds(site))} of ${site.allowedMinutes} min used today`
-    : ' rule disabled';
+function statusText(site: SiteStatus): string {
+  return site.enabled ? ' rule active' : ' rule disabled';
 }
 
 /**
@@ -57,9 +43,19 @@ function updateUsageInPlace(root: Element, status: BackgroundResponse | undefine
   if (!status || !status.ok || status.type !== 'status') return false;
 
   for (const site of status.sites) {
-    const slot = root.querySelector(`[data-site-row="${site.site}"] [data-usage]`);
-    if (!slot) return false;
-    slot.textContent = usageText(site);
+    const row = root.querySelector(`[data-site-row="${site.site}"]`);
+    const slot = row?.querySelector('[data-status]');
+    if (!row || !slot) return false;
+    slot.textContent = statusText(site);
+
+    const session = row.querySelector('[data-session]');
+    if (site.active && !session) {
+      const marker = element('em', ' · in a session now');
+      marker.dataset['session'] = '';
+      row.append(marker);
+    } else if (!site.active) {
+      session?.remove();
+    }
   }
   return status.sites.length > 0;
 }
@@ -89,11 +85,15 @@ export async function renderPopup(
     const row = element('li');
     row.dataset['siteRow'] = site.site;
     row.append(element('strong', labelFor(site.site)));
-    const usage = element('span', usageText(site));
-    usage.dataset['usage'] = '';
-    row.append(usage);
+    const ruleStatus = element('span', statusText(site));
+    ruleStatus.dataset['status'] = '';
+    row.append(ruleStatus);
     // Session status appears only while a session actually exists.
-    if (site.active) row.append(element('em', ' · in a session now'));
+    if (site.active) {
+      const session = element('em', ' · in a session now');
+      session.dataset['session'] = '';
+      row.append(session);
+    }
     list.append(row);
   }
   root.append(list);

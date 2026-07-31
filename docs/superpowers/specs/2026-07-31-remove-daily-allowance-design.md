@@ -14,9 +14,10 @@ makes it unclear which limit is in charge and weakens the intent-based model.
   (five minutes by default), measured only while the feed is foregrounded.
 - A purposeful declaration has no timer. The local classifier may still raise
   a wall only for a high-confidence contradiction.
-- Sustained passive scrolling may still use the score-based notification and
-  pause ladder. It is no longer escalated because a daily minute total was
-  reached.
+- Before a person has an active intent declaration, sustained passive scrolling
+  may still use the score-based notification and pause ladder. An active
+  declaration remains the primary control and is never overridden by that
+  ladder. Neither path escalates because a daily minute total was reached.
 
 ## Removed concepts
 
@@ -42,4 +43,5 @@ dropped on the next Options save. No new data is collected or transmitted.
 - The popup contains no daily allowance or "used today" wording.
 - A doomscroll budget still walls on the next feed advance once foreground
   usage since declaration reaches that budget.
-- Score-based interventions continue to work without any usage input.
+- Score-based interventions continue to work without any usage input for
+  sessions that do not have an active declaration.

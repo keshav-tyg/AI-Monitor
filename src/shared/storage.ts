@@ -58,7 +58,20 @@ export async function getSettings(): Promise<Settings> {
   const stored = await readKey<Partial<Settings>>(KEY_SETTINGS, {});
   const rules = {} as Record<SiteId, SiteRule>;
   for (const site of SITE_IDS) {
-    rules[site] = { ...DEFAULT_SETTINGS.rules[site], ...(stored.rules?.[site] ?? {}) };
+    const legacyRule = stored.rules?.[site] as Partial<SiteRule> | undefined;
+    const fallback = DEFAULT_SETTINGS.rules[site];
+    // Construct the supported shape explicitly. Old allowance fields (and any
+    // other stale keys) remain harmless in local storage and disappear on the
+    // next Options save.
+    rules[site] = {
+      enabled: legacyRule?.enabled ?? fallback.enabled,
+      warningScore: legacyRule?.warningScore ?? fallback.warningScore,
+      gracePeriodSeconds: legacyRule?.gracePeriodSeconds ?? fallback.gracePeriodSeconds,
+      doomscrollBudgetMinutes:
+        legacyRule?.doomscrollBudgetMinutes ?? fallback.doomscrollBudgetMinutes,
+      interventions: legacyRule?.interventions ?? fallback.interventions,
+      blockUntil: legacyRule?.blockUntil ?? fallback.blockUntil,
+    };
   }
   return { enabled: stored.enabled ?? DEFAULT_SETTINGS.enabled, rules };
 }

@@ -98,7 +98,7 @@ it('keeps popup controls clickable across a refresh tick', async () => {
     enabled: true,
     settings: DEFAULT_SETTINGS,
     sites: [
-      { site: 'instagram-reels', enabled: true, usedMs: 1_000, allowedMinutes: 15, active: true },
+      { site: 'instagram-reels', enabled: true, active: true },
     ],
   }));
 
