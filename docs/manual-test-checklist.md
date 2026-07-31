@@ -35,9 +35,8 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
 ## Intent-aware sessions
 
 - [ ] **A feed entry asks once.** Open Instagram Reels directly. Confirm the
-      two-button intent prompt appears, with the Options-configured budget in
-      its doomscroll button. Reopening during the cooldown must not prompt
-      again.
+      single doomscroll-start button shows the Options-configured budget.
+      Reopening during the cooldown must not prompt again.
 - [ ] **A direct link gets one free item.** Paste a specific Reel URL or open
       one from another app. Confirm it opens without a prompt or wall. Advance
       once, then confirm the intent prompt appears.
@@ -50,8 +49,7 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
       advancing past it must return to the intent flow.
 - [ ] **Model failure fails open.** Disable the Prompt API flag (or test while
       the local model is unavailable). Declarations and budgets still work;
-      a declared purposeful session is never walled solely because the model
-      could not answer.
+      the model simply cannot veto a budget wall when it cannot answer.
 - [ ] **No page content reaches the model.** In the service-worker and
       offscreen-document DevTools, inspect classify messages while using a
       session. They contain aggregate numbers and enum values only — no URL,

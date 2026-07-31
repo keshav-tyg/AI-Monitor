@@ -1,13 +1,11 @@
 import {
   doomscrollButtonLabel,
   INTENT_PROMPT_QUESTION,
-  PURPOSEFUL_BUTTON_LABEL,
 } from '../shared/constants';
-import type { DeclaredIntent, SiteId } from '../shared/types';
+import type { SiteId } from '../shared/types';
 
 const PROMPT_ID = 'local-focus-coach-intent';
 const WALL_ID = 'local-focus-coach-wall';
-let promptEscapeHandler: ((event: KeyboardEvent) => void) | undefined;
 
 /** Same isolation trick as `overlay.ts`: no shadow root, so tests can query it. */
 const RESET = 'all: initial; font-family: system-ui, -apple-system, sans-serif;';
@@ -33,10 +31,6 @@ function removeById(id: string): void {
 
 function dismissIntentPrompt(): void {
   removeById(PROMPT_ID);
-  if (promptEscapeHandler) {
-    document.removeEventListener('keydown', promptEscapeHandler, true);
-    promptEscapeHandler = undefined;
-  }
 }
 
 export function dismissIntentSurfaces(): void {
@@ -62,9 +56,8 @@ function makeButton(label: string, onActivate: () => void): HTMLButtonElement {
 }
 
 /**
- * Two buttons, no free text and no duration picker. Free text costs a second of
- * inference before the person can proceed and can be misread; a picker invites
- * negotiating the limit upward at the moment it is least wanted.
+ * One explicit action, no free text, and no duration picker. The configured
+ * budget is decided in Options, not negotiated at the moment of distraction.
  */
 export function showIntentPrompt(options: IntentPromptOptions): void {
   dismissIntentPrompt();
@@ -83,27 +76,17 @@ export function showIntentPrompt(options: IntentPromptOptions): void {
   const actions = document.createElement('div');
   actions.style.cssText = `${RESET} display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;`;
 
-  function onKeyDown(event: KeyboardEvent): void {
-    if (event.key !== 'Escape') return;
-    declare('purposeful');
-  }
-
-  function declare(intent: DeclaredIntent): void {
+  function startDoomscrollSession(): void {
     dismissIntentPrompt();
-    notifyBackground({ type: 'declare-intent', site: options.site, intent });
+    notifyBackground({ type: 'declare-intent', site: options.site, intent: 'doomscroll' });
   }
 
   const doomscroll = makeButton(doomscrollButtonLabel(options.budgetMinutes), () =>
-    declare('doomscroll'),
+    startDoomscrollSession(),
   );
-  const purposeful = makeButton(PURPOSEFUL_BUTTON_LABEL, () => declare('purposeful'));
-  actions.append(doomscroll, purposeful);
+  actions.append(doomscroll);
 
   dialog.append(heading, actions);
-  // Dismissing without answering is not a way past the question — it resolves
-  // to the answer that restricts nothing, and the model keeps watching.
-  promptEscapeHandler = onKeyDown;
-  document.addEventListener('keydown', promptEscapeHandler, true);
   document.body.append(dialog);
   doomscroll.focus();
 }

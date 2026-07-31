@@ -20,13 +20,13 @@ beforeEach(() => {
 });
 
 describe('intent prompt', () => {
-  it('offers exactly two answers and no free text', () => {
+  it('offers one doomscroll action and no free text', () => {
     showIntentPrompt({ site: 'instagram-reels', budgetMinutes: 5 });
 
     expect(document.querySelector('[role="dialog"]')).toHaveTextContent(
       'Hey, what are we doing here?',
     );
-    expect(document.querySelectorAll('[role="dialog"] button')).toHaveLength(2);
+    expect(document.querySelectorAll('[role="dialog"] button')).toHaveLength(1);
     expect(document.querySelectorAll('input, textarea, select')).toHaveLength(0);
   });
 
@@ -49,38 +49,21 @@ describe('intent prompt', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('declares looking-for-something when that answer is chosen', () => {
-    const sendMessage = installRuntime();
-    showIntentPrompt({ site: 'x-timeline', budgetMinutes: 5 });
-
-    buttonLabelled('Looking for something')?.click();
-
-    expect(sendMessage).toHaveBeenCalledWith({
-      type: 'declare-intent',
-      site: 'x-timeline',
-      intent: 'purposeful',
-    });
-  });
-
-  it('treats dismissal without an answer as looking for something', () => {
+  it('does not create a hidden purposeful declaration from Escape', () => {
     const sendMessage = installRuntime();
     showIntentPrompt({ site: 'instagram-reels', budgetMinutes: 5 });
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
-    expect(sendMessage).toHaveBeenCalledWith({
-      type: 'declare-intent',
-      site: 'instagram-reels',
-      intent: 'purposeful',
-    });
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
   });
 
-  it('stops listening for Escape once it has been answered', () => {
+  it('does not react to Escape once the session has been started', () => {
     const sendMessage = installRuntime();
     showIntentPrompt({ site: 'instagram-reels', budgetMinutes: 5 });
 
-    buttonLabelled('Looking for something')?.click();
+    buttonLabelled('Doomscrolling — give me 5 minutes')?.click();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
