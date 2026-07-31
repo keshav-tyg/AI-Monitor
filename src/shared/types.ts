@@ -46,6 +46,9 @@ export interface SessionState {
   site: SiteId;
   enteredAt: number;
   lastEventAt: number;
+  /** Last event that was actual behaviour. Heartbeats deliberately do not
+   *  advance this, so pure timekeeping cannot hold a stale session open. */
+  lastActivityAt: number;
   lastPurposefulAt?: number;
   score: number;
   consecutiveAdvances: number;

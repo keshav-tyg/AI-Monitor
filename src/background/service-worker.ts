@@ -10,6 +10,7 @@ import {
 import {
   addUsage,
   appendIntervention,
+  clearReturnPause,
   getBlocks,
   getReturnPause,
   getSettings,
@@ -204,10 +205,12 @@ export async function handleEvent(
   }
   sessions.set(tabId, session);
 
-  // Bill foreground time, capped so a backgrounded tab cannot inflate usage.
+  // Bill foreground time. A gap wider than one event can account for means the
+  // tab was hidden or the worker slept, so bill nothing rather than clamp it to
+  // 30s of presence that never happened.
   if (previous) {
-    const delta = Math.min(Math.max(0, event.at - previous.lastEventAt), MAX_EVENT_GAP_MS);
-    if (delta > 0) await addUsage(event.site, delta, now);
+    const gap = event.at - previous.lastEventAt;
+    if (gap > 0 && gap <= MAX_EVENT_GAP_MS) await addUsage(event.site, gap, now);
   }
 
   // Leaving a feed must never be the thing that enforces against it. Without
@@ -221,13 +224,18 @@ export async function handleEvent(
   const suppression = suppressedUntil.get(tabId);
   if (suppression !== undefined && now < suppression) return { kind: 'none' };
 
-  // A deliberate Leave means the person already saw this pause. Reopening
-  // the feed must not restart the warning/grace ladder from the first step.
-  const returnPause = await getReturnPause(event.site, now);
-  if (returnPause) {
-    const decision: InterventionDecision = { kind: 'pause', reason: returnPause.reason };
-    await enforce(tabId, event.site, decision, session, now, false);
-    return decision;
+  // A deliberate Leave means the person already saw this pause. Show it once on
+  // re-entry and consume it: gating on view-entered keeps the 1/second
+  // heartbeats from re-firing it, which rebuilt the overlay every second and
+  // made its buttons impossible to click.
+  if (event.kind === 'view-entered') {
+    const returnPause = await getReturnPause(event.site, now);
+    if (returnPause) {
+      await clearReturnPause(event.site);
+      const decision: InterventionDecision = { kind: 'pause', reason: returnPause.reason };
+      await enforce(tabId, event.site, decision, session, now, false);
+      return decision;
+    }
   }
 
   const usageMs = await getUsage(event.site, now);
@@ -293,7 +301,11 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
       });
       sessions.delete(tabId);
       suppressedUntil.delete(tabId);
-      await chrome.tabs.remove(tabId);
+      // Closing a tab is only ever allowed when the rule selects close-tab.
+      const settings = await getSettings();
+      if (settings.rules[request.site]?.interventions.includes('close-tab')) {
+        await chrome.tabs.remove(tabId);
+      }
       return { ok: true, type: 'ack' };
     }
     case 'temporary-continue': {
@@ -329,3 +341,6 @@ function registerListeners(): void {
 registerListeners();
 
 export type { BlockEntry };
+
+/** Test seam: exercises the same message routes the UI and overlay use. */
+export const routeForTest = route;

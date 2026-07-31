@@ -12,6 +12,7 @@ export function initialSession(event: NormalizedEvent): SessionState {
     site: event.site,
     enteredAt: event.at,
     lastEventAt: event.at,
+    lastActivityAt: event.at,
     score: 0,
     consecutiveAdvances: 0,
     continuousScrolls: 0,
@@ -23,11 +24,15 @@ export function applyEvent(session: SessionState, event: NormalizedEvent): Sessi
   // previous session no longer describes what the person is doing.
   if (event.site !== session.site) return initialSession(event);
   if (event.at < session.lastEventAt) return initialSession(event);
-  if (event.at - session.lastEventAt > DETECTION.sessionIdleMs) return initialSession(event);
+  // Measured from real behaviour, not from heartbeats: a visible tab emits a
+  // heartbeat every second forever, which would otherwise mean no session ever
+  // goes idle and a stale score survives indefinitely.
+  const lastActivityAt = session.lastActivityAt ?? session.lastEventAt;
+  if (event.at - lastActivityAt > DETECTION.sessionIdleMs) return initialSession(event);
   if (event.kind === 'view-entered') return initialSession(event);
 
   if (event.kind === 'view-left') {
-    return { ...session, lastEventAt: event.at };
+    return { ...session, lastEventAt: event.at, lastActivityAt: event.at };
   }
 
   // Timekeeping keeps allowance usage current while a Reel is watched, but it
@@ -40,6 +45,7 @@ export function applyEvent(session: SessionState, event: NormalizedEvent): Sessi
     return {
       ...session,
       lastEventAt: event.at,
+      lastActivityAt: event.at,
       lastPurposefulAt: event.at,
       score: session.score * DETECTION.purposefulScoreMultiplier,
       consecutiveAdvances: 0,
@@ -56,6 +62,7 @@ export function applyEvent(session: SessionState, event: NormalizedEvent): Sessi
     return {
       ...session,
       lastEventAt: event.at,
+      lastActivityAt: event.at,
       consecutiveAdvances: session.consecutiveAdvances + 1,
       score: session.score + (passiveLongEnough ? DETECTION.advancePoints : 0),
     };
@@ -64,6 +71,7 @@ export function applyEvent(session: SessionState, event: NormalizedEvent): Sessi
   return {
     ...session,
     lastEventAt: event.at,
+    lastActivityAt: event.at,
     continuousScrolls: session.continuousScrolls + 1,
     score: session.score + (passiveLongEnough ? DETECTION.scrollPoints : 0),
   };

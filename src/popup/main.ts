@@ -40,8 +40,37 @@ function usageMilliseconds(site: SiteStatus): number {
     : 0;
 }
 
-export async function renderPopup(root: Element): Promise<void> {
-  const status = await request({ type: 'get-status' });
+function usageText(site: SiteStatus): string {
+  return site.enabled
+    ? ` ${formatDuration(usageMilliseconds(site))} of ${site.allowedMinutes} min used today`
+    : ' rule disabled';
+}
+
+/**
+ * Updates only the numbers that change. Rebuilding the whole subtree once a
+ * second detached the buttons mid-interaction, so a click that raced the
+ * refresh landed on a node no longer in the document and was silently lost.
+ * Returns false when the existing markup does not match, so the caller can
+ * fall back to a full render.
+ */
+function updateUsageInPlace(root: Element, status: BackgroundResponse | undefined): boolean {
+  if (!status || !status.ok || status.type !== 'status') return false;
+
+  for (const site of status.sites) {
+    const slot = root.querySelector(`[data-site-row="${site.site}"] [data-usage]`);
+    if (!slot) return false;
+    slot.textContent = usageText(site);
+  }
+  return status.sites.length > 0;
+}
+
+export async function renderPopup(
+  root: Element,
+  prefetched?: BackgroundResponse,
+): Promise<void> {
+  // Callers that already asked for status pass it in, so one refresh never
+  // costs two round trips to the worker.
+  const status = prefetched ?? (await request({ type: 'get-status' }));
   root.replaceChildren();
 
   root.append(element('h1', 'Local Focus Coach'));
@@ -58,15 +87,11 @@ export async function renderPopup(root: Element): Promise<void> {
   const list = element('ul');
   for (const site of status.sites as SiteStatus[]) {
     const row = element('li');
+    row.dataset['siteRow'] = site.site;
     row.append(element('strong', labelFor(site.site)));
-    row.append(
-      element(
-        'span',
-        site.enabled
-          ? ` ${formatDuration(usageMilliseconds(site))} of ${site.allowedMinutes} min used today`
-          : ' rule disabled',
-      ),
-    );
+    const usage = element('span', usageText(site));
+    usage.dataset['usage'] = '';
+    row.append(usage);
     // Session status appears only while a session actually exists.
     if (site.active) row.append(element('em', ' · in a session now'));
     list.append(row);
@@ -90,7 +115,8 @@ export function startPopup(root: Element): () => void {
     if (refreshing) return;
     refreshing = true;
     try {
-      await renderPopup(root);
+      const status = await request({ type: 'get-status' });
+      if (!updateUsageInPlace(root, status)) await renderPopup(root, status);
     } finally {
       refreshing = false;
     }
