@@ -34,9 +34,20 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
 
 ## Intent-aware sessions
 
-- [ ] **A feed entry asks once.** Open Instagram Reels directly. Confirm the
-      single doomscroll-start button shows the Options-configured budget.
-      Reopening during the cooldown must not prompt again.
+- [ ] **The whole Reels flow, end to end.** With the Instagram rule enabled and
+      the budget set to one minute: open `instagram.com/reels` → the prompt
+      appears → choose *Doomscrolling* → the popup shows a timer counting up
+      toward `1 min session` while the feed is foregrounded → keep scrolling
+      until the minute is spent → the next advance raises the wall → **Leave**
+      closes the feed. Then open Options and confirm four timeline rows, newest
+      first: leave pressed, wall shown, timer ended, session started.
+- [ ] **A feed entry asks once, with one answer.** Open Instagram Reels
+      directly. The prompt offers exactly *Doomscrolling — give me N minutes*,
+      quoting the Options budget, with no second button, no text box, and no
+      duration picker. Reopening during the cooldown must not prompt again.
+- [ ] **The prompt cannot be dismissed into a free session.** Press Escape and
+      click outside the dialog. It stays up, nothing is declared, and no
+      timeline row appears.
 - [ ] **A direct link gets one free item.** Paste a specific Reel URL or open
       one from another app. Confirm it opens without a prompt or wall. Advance
       once, then confirm the intent prompt appears.
@@ -54,6 +65,30 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
       offscreen-document DevTools, inspect classify messages while using a
       session. They contain aggregate numbers and enum values only — no URL,
       caption, title, post text, or identifier.
+
+## Session state survives everything
+
+Each of these starts the same way: declare a doomscroll session, spend most of
+the budget, then do the listed thing. In every case the remaining budget must
+carry over — never reset, never bypassed.
+
+- [ ] **Refresh the tab.** Reload the Reels page. No new prompt, and the popup
+      timer resumes from where it was.
+- [ ] **Close and reopen the tab.** The budget continues; a fresh prompt appears
+      only after the 30-minute cooldown has passed.
+- [ ] **Reload the extension.** `chrome://extensions` → reload. Without
+      navigating the feed tab, keep scrolling: the wall still arrives when the
+      budget is spent.
+- [ ] **Restart Chrome entirely.** Same as above.
+- [ ] **A session survives local midnight.** Set the system clock to 23:57,
+      declare a session, spend part of the budget, then let the clock pass
+      midnight and keep scrolling. The remaining budget must be what was left,
+      not a fresh one — the daily usage counter resetting must change nothing.
+- [ ] **A raised wall stays raised.** After the wall appears, reload the
+      extension and return to the feed. Advancing must re-wall, and Options must
+      still show exactly one *Wall shown* row for that session.
+- [ ] **"Continue for 5 minutes" is not a way past a wall.** It suppresses the
+      score-ladder pause only; the declared budget still walls.
 
 ## Interventions
 
@@ -95,3 +130,9 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
       inline error and nothing persists.
 - [ ] **Feedback records.** Click Accurate and Inaccurate on review entries and
       confirm the choice survives a reload.
+- [ ] **Options says what will happen.** Enable a rule and read its summary line
+      back: it names the doomscroll budget in minutes and the intervention
+      ladder in order, and changes live as the fields are edited.
+- [ ] **The timeline reads plainly.** Each row shows a local timestamp, the feed
+      label, one of the four moments, and a sentence built from your settings —
+      no URLs, captions, or ids anywhere in it.

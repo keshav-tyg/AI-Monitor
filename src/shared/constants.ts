@@ -69,6 +69,9 @@ export const TEMPORARY_CONTINUE_MS = 300_000;
 
 export const MAX_INTERVENTION_RECORDS = 200;
 
+/** The activity timeline is a diary, not an archive. Same cap, same reason. */
+export const MAX_ACTIVITY_RECORDS = 200;
+
 export const DECLARATION = {
   /** One prompt per site per cooldown, so it stays read rather than reflexed. */
   cooldownMs: 1_800_000,

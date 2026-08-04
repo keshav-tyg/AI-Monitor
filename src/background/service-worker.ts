@@ -13,13 +13,14 @@ import {
 } from '../shared/constants';
 import {
   addUsage,
+  appendActivity,
   appendIntervention,
   clearReturnPause,
   getBlocks,
   getDeclaration,
   getReturnPause,
   getSettings,
-  getUsage,
+  listActivity,
   listInterventions,
   saveBlocks,
   saveDeclaration,
@@ -30,6 +31,7 @@ import {
 } from '../shared/storage';
 import { nextLocalMidnight } from '../shared/time';
 import type {
+  ActivityKind,
   BackgroundRequest,
   BackgroundResponse,
   ClassifierResult,
@@ -159,6 +161,56 @@ async function record(site: SiteId, kind: InterventionKind, reason: string, at: 
   await appendIntervention({ id: `${at}-${site}-${kind}`, at, site, kind, reason });
 }
 
+/**
+ * Serializes read-modify-write cycles on one site's declaration.
+ *
+ * Message handlers interleave at every `await`, so two advances — two tabs on
+ * the same feed, or a heartbeat racing an advance — could both read `walledAt`
+ * as unset and each write a crossing, producing duplicate interventions and
+ * duplicate timeline rows. The worker is single-threaded, so chaining promises
+ * per site is enough to make each cycle atomic.
+ */
+const declarationLocks = new Map<SiteId, Promise<unknown>>();
+
+function withDeclarationLock<T>(site: SiteId, work: () => Promise<T>): Promise<T> {
+  const previous = declarationLocks.get(site) ?? Promise.resolve();
+  const next = previous.then(work, work);
+  // The stored tail must never reject, or every later waiter inherits it.
+  declarationLocks.set(
+    site,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return next;
+}
+
+/**
+ * Bills foreground time against the declaration that is paying for it. Kept
+ * separate from `addUsage` because the daily counter resets at midnight and a
+ * session's budget must not.
+ */
+async function spendDeclaredBudget(site: SiteId, milliseconds: number, now: number): Promise<void> {
+  if (!(milliseconds > 0)) return;
+  await withDeclarationLock(site, async () => {
+    const declaration = await getDeclaration(site, now);
+    if (!declaration || declaration.intent !== 'doomscroll') return;
+    if (declaration.walledAt !== undefined) return;
+    await saveDeclaration({ ...declaration, spentMs: declaration.spentMs + milliseconds });
+  });
+}
+
+/** The plain diary of a declared session: what happened, when, in order. */
+async function logActivity(
+  site: SiteId,
+  kind: ActivityKind,
+  detail: string,
+  at: number,
+): Promise<void> {
+  await appendActivity({ id: `${at}-${site}-${kind}`, at, site, kind, detail });
+}
+
 async function enforce(
   tabId: number,
   site: SiteId,
@@ -249,13 +301,24 @@ async function raiseWall(
   site: SiteId,
   reason: string,
   now: number,
+  /** Which control ended the session — the budget, or the model's judgement. */
+  cause: 'budget' | 'model',
 ): Promise<InterventionDecision> {
-  const declaration = await getDeclaration(site, now);
-  if (declaration && declaration.walledAt === undefined) {
+  // Claiming the crossing and writing it must be one indivisible step, or two
+  // racing advances both record the same wall.
+  const crossed = await withDeclarationLock(site, async () => {
+    const declaration = await getDeclaration(site, now);
+    if (!declaration || declaration.walledAt !== undefined) return false;
     await saveDeclaration({ ...declaration, walledAt: now });
+    return true;
+  });
+
+  if (crossed) {
     // Recorded once, on the crossing. Re-walling on every later advance would
     // bury the review list in duplicates of the same decision.
     await record(site, 'pause', reason, now);
+    if (cause === 'budget') await logActivity(site, 'budget-spent', reason, now);
+    await logActivity(site, 'wall-shown', reason, now);
   }
   await sendCommand(tabId, { type: 'wall', site, reason });
   return { kind: 'pause', reason };
@@ -322,13 +385,11 @@ async function evaluateDeclaration(
   budgetMinutes: number,
 ): Promise<InterventionDecision> {
   const declaration = await getDeclaration(arrival.site, now);
-  const usageMs = await getUsage(arrival.site, now);
   const verdict = await maybeClassify(arrival, declaration, now);
 
   const action = nextDeclarationAction({
     arrival: { entryKind: arrival.entryKind, advancesSinceEntry: arrival.advancesSinceEntry },
     declaration,
-    usageMs,
     budgetMs: budgetMinutes * 60_000,
     budgetMinutes,
     verdict,
@@ -343,7 +404,12 @@ async function evaluateDeclaration(
     return { kind: 'none' };
   }
 
-  if (action.kind === 'wall') return raiseWall(tabId, arrival.site, action.reason, now);
+  if (action.kind === 'wall') {
+    // A doomscroll declaration can only ever be ended by its own budget; a
+    // purposeful one can only ever be ended by the model.
+    const cause = declaration?.intent === 'doomscroll' ? 'budget' : 'model';
+    return raiseWall(tabId, arrival.site, action.reason, now, cause);
+  }
   return { kind: 'none' };
 }
 
@@ -384,7 +450,13 @@ export async function handleEvent(
   // 30s of presence that never happened.
   if (previous) {
     const gap = event.at - previous.lastEventAt;
-    if (gap > 0 && gap <= MAX_EVENT_GAP_MS) await addUsage(event.site, gap, now);
+    if (gap > 0 && gap <= MAX_EVENT_GAP_MS) {
+      await addUsage(event.site, gap, now);
+      // The same foreground time, billed a second time against the declaration
+      // that is paying for it. Two counters because they expire differently:
+      // usage resets at local midnight, a declared budget never does.
+      await spendDeclaredBudget(event.site, gap, now);
+    }
   }
 
   // Leaving a feed must never be the thing that enforces against it. Without
@@ -399,9 +471,30 @@ export async function handleEvent(
   // The declared-intent path runs first, and ahead of the "continue for 5
   // minutes" suppression: that button belongs to the score ladder, and it must
   // not buy a way past a budget the person set themselves.
-  const arrival = arrivals.get(tabId);
+  let arrival = arrivals.get(tabId);
   let activeDeclaration: DeclarationEntry | undefined;
-  if (arrival && arrival.site === event.site) {
+
+  // An MV3 worker is torn down whenever it idles, and `arrive` is only sent on
+  // a route change — so without this, reloading the extension or coming back to
+  // a backgrounded tab would leave the budget unenforced until the next
+  // navigation. Rebuilding here keeps the persisted declaration in charge.
+  if (!arrival || arrival.site !== event.site) {
+    const existing = await getDeclaration(event.site, now);
+    arrival = {
+      site: event.site,
+      // Already declared means this *is* the session they declared, so it gets
+      // no free item. Otherwise fail open: one item, then it converts.
+      entryKind: existing ? 'feed-entry' : 'deep-link',
+      advancesSinceEntry: 0,
+      startedAt: now,
+      records: [],
+      purposefulActionCount: 0,
+      scrollBurstCount: 0,
+    };
+    arrivals.set(tabId, arrival);
+  }
+
+  {
     activeDeclaration = await getDeclaration(event.site, now);
     if (event.kind === 'content-advance') arrival.advancesSinceEntry += 1;
     else if (event.kind === 'scroll') arrival.scrollBurstCount += 1;
@@ -463,7 +556,7 @@ async function buildStatus(now: number): Promise<BackgroundResponse> {
       ? declaration.intent === 'doomscroll'
         ? {
             intent: declaration.intent,
-            usedMs: Math.max(0, (await getUsage(site, now)) - declaration.usageAtStartMs),
+            usedMs: Math.max(0, declaration.spentMs),
             budgetMinutes: rule.doomscrollBudgetMinutes,
           }
         : { intent: declaration.intent }
@@ -550,18 +643,33 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
       // restricts nothing — including a dismissal.
       const intent: DeclaredIntent = request.intent === 'doomscroll' ? 'doomscroll' : 'purposeful';
 
-      await saveDeclaration({
-        site: request.site,
-        intent,
-        entryKind: arrival ? effectiveEntryKind(arrival) : 'feed-entry',
-        startedAt: now,
-        // The cooldown horizon: until it passes, the question is not asked
-        // again, so it stays something read rather than reflex-dismissed.
-        expiresAt: now + DECLARATION.cooldownMs,
-        usageAtStartMs: await getUsage(request.site, now),
+      await withDeclarationLock(request.site, async () => {
+        await saveDeclaration({
+          site: request.site,
+          intent,
+          entryKind: arrival ? effectiveEntryKind(arrival) : 'feed-entry',
+          startedAt: now,
+          // The cooldown horizon: until it passes, the question is not asked
+          // again, so it stays something read rather than reflex-dismissed.
+          expiresAt: now + DECLARATION.cooldownMs,
+          spentMs: 0,
+        });
       });
+
+      const settings = await getSettings();
+      const budgetMinutes = settings.rules[request.site]?.doomscrollBudgetMinutes ?? 0;
+      await logActivity(
+        request.site,
+        'session-started',
+        intent === 'doomscroll'
+          ? `Doomscrolling — ${budgetMinutes} minute budget`
+          : 'Looking for something — no timer',
+        now,
+      );
       return { ok: true, type: 'ack' };
     }
+    case 'get-activity':
+      return { ok: true, type: 'activity', entries: await listActivity() };
     case 'engagement': {
       const arrival = tabId === undefined ? undefined : arrivals.get(tabId);
       if (!arrival || arrival.site !== request.site) return { ok: true, type: 'ack' };
@@ -581,6 +689,8 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
     case 'wall-leave': {
       if (tabId === undefined) return { ok: false, error: 'No originating tab' };
       if (!isSupportedSite(request.site)) return { ok: false, error: 'Unsupported site' };
+
+      await logActivity(request.site, 'leave-pressed', 'Left the feed from the wall', Date.now());
 
       // No return pause here: the wall already survives in the declaration, and
       // a return pause would offer a Continue button the wall is refusing.

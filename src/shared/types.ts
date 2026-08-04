@@ -101,8 +101,13 @@ export interface DeclarationEntry {
   entryKind: EntryKind;
   startedAt: number;
   expiresAt: number;
-  /** Budget origin. The budget is spent against usage, not wall-clock time. */
-  usageAtStartMs: number;
+  /**
+   * Foreground milliseconds this declaration has consumed. Owned by the
+   * session, not derived from the daily usage counter: that counter resets at
+   * local midnight, which would otherwise hand a session declared at 23:59 its
+   * budget back plus everything already spent that day.
+   */
+  spentMs: number;
   walledAt?: number;
 }
 
@@ -137,6 +142,22 @@ export interface InterventionRecord {
   feedback?: InterventionFeedback;
 }
 
+/**
+ * The four moments a declared session actually has. Kept separate from
+ * `InterventionRecord` because these are a plain diary of what happened, not
+ * judgements carrying accurate/inaccurate feedback.
+ */
+export type ActivityKind = 'session-started' | 'budget-spent' | 'wall-shown' | 'leave-pressed';
+
+export interface ActivityEntry {
+  id: string;
+  at: number;
+  site: SiteId;
+  kind: ActivityKind;
+  /** Plain language, derived from settings and counters. Never page content. */
+  detail: string;
+}
+
 /** `none` carries no reason so a fail-open result stays trivially comparable. */
 export type InterventionDecision =
   | { kind: 'none' }
@@ -166,12 +187,14 @@ export type BackgroundRequest =
   | { type: 'arrive'; site: SiteId; entryKind: EntryKind }
   | { type: 'declare-intent'; site: SiteId; intent: DeclaredIntent }
   | { type: 'engagement'; site: SiteId; record: EngagementRecord }
-  | { type: 'wall-leave'; site: SiteId };
+  | { type: 'wall-leave'; site: SiteId }
+  | { type: 'get-activity' };
 
 export type BackgroundResponse =
   | { ok: true; type: 'status'; enabled: boolean; sites: SiteStatus[]; settings: Settings }
   | { ok: true; type: 'settings'; settings: Settings }
   | { ok: true; type: 'interventions'; records: InterventionRecord[] }
+  | { ok: true; type: 'activity'; entries: ActivityEntry[] }
   | { ok: true; type: 'ack' }
   | { ok: false; error: string };
 

@@ -13,7 +13,7 @@ function declaration(overrides: Partial<DeclarationEntry> = {}): DeclarationEntr
     entryKind: 'feed-entry',
     startedAt: 1_000,
     expiresAt: 1_801_000,
-    usageAtStartMs: 60_000,
+    spentMs: 0,
     ...overrides,
   };
 }
@@ -43,15 +43,15 @@ describe('effective entry kind', () => {
 describe('budget accounting', () => {
   it('spends against foreground usage, not wall-clock time', () => {
     const entry = declaration();
-    expect(isBudgetSpent({ declaration: entry, usageMs: 300_000, budgetMs: BUDGET_MS })).toBe(false);
-    expect(isBudgetSpent({ declaration: entry, usageMs: 360_000, budgetMs: BUDGET_MS })).toBe(true);
+    expect(isBudgetSpent({ declaration: entry, budgetMs: BUDGET_MS })).toBe(false);
+    expect(
+      isBudgetSpent({ declaration: declaration({ spentMs: 300_000 }), budgetMs: BUDGET_MS }),
+    ).toBe(true);
   });
 
   it('never spends a budget that was never granted', () => {
-    const entry = declaration({ intent: 'purposeful' });
-    expect(isBudgetSpent({ declaration: entry, usageMs: 9_999_999, budgetMs: BUDGET_MS })).toBe(
-      false,
-    );
+    const entry = declaration({ intent: 'purposeful', spentMs: 9_999_999 });
+    expect(isBudgetSpent({ declaration: entry, budgetMs: BUDGET_MS })).toBe(false);
   });
 });
 
@@ -64,7 +64,6 @@ describe('confidence gates', () => {
 
 describe('next declaration action', () => {
   const base = {
-    usageMs: 60_000,
     budgetMs: BUDGET_MS,
     budgetMinutes: 5,
   };
@@ -97,7 +96,7 @@ describe('next declaration action', () => {
     const action = nextDeclarationAction({
       ...base,
       arrival: { entryKind: 'feed-entry', advancesSinceEntry: 4 },
-      declaration: declaration({ intent: 'purposeful' }),
+      declaration: declaration({ intent: 'purposeful', spentMs: 9_999_999 }),
     });
     expect(action).toEqual({ kind: 'none' });
   });
@@ -105,9 +104,8 @@ describe('next declaration action', () => {
   it('walls once the declared budget is spent', () => {
     const action = nextDeclarationAction({
       ...base,
-      usageMs: 400_000,
       arrival: { entryKind: 'feed-entry', advancesSinceEntry: 12 },
-      declaration: declaration(),
+      declaration: declaration({ spentMs: 400_000 }),
     });
     expect(action.kind).toBe('wall');
     expect(action.kind === 'wall' && action.reason).toContain('5 minutes');
@@ -116,9 +114,8 @@ describe('next declaration action', () => {
   it('lets the model veto a budget wall when the behaviour looks deliberate', () => {
     const action = nextDeclarationAction({
       ...base,
-      usageMs: 400_000,
       arrival: { entryKind: 'feed-entry', advancesSinceEntry: 12 },
-      declaration: declaration(),
+      declaration: declaration({ spentMs: 400_000 }),
       verdict: verdict({ confidence: 0.6 }),
     });
     expect(action).toEqual({ kind: 'none' });
@@ -127,9 +124,8 @@ describe('next declaration action', () => {
   it('ignores a veto that the model is not confident about', () => {
     const action = nextDeclarationAction({
       ...base,
-      usageMs: 400_000,
       arrival: { entryKind: 'feed-entry', advancesSinceEntry: 12 },
-      declaration: declaration(),
+      declaration: declaration({ spentMs: 400_000 }),
       verdict: verdict({ confidence: 0.4 }),
     });
     expect(action.kind).toBe('wall');
@@ -138,9 +134,8 @@ describe('next declaration action', () => {
   it('never walls a purposeful declaration on time alone', () => {
     const action = nextDeclarationAction({
       ...base,
-      usageMs: 9_999_999,
       arrival: { entryKind: 'feed-entry', advancesSinceEntry: 40 },
-      declaration: declaration({ intent: 'purposeful' }),
+      declaration: declaration({ intent: 'purposeful', spentMs: 9_999_999 }),
     });
     expect(action).toEqual({ kind: 'none' });
   });
@@ -149,7 +144,7 @@ describe('next declaration action', () => {
     const action = nextDeclarationAction({
       ...base,
       arrival: { entryKind: 'feed-entry', advancesSinceEntry: 20 },
-      declaration: declaration({ intent: 'purposeful' }),
+      declaration: declaration({ intent: 'purposeful', spentMs: 9_999_999 }),
       verdict: verdict({ confidence: 0.85, reason: 'no item held attention' }),
     });
     expect(action).toEqual({ kind: 'wall', reason: 'no item held attention' });
@@ -159,7 +154,7 @@ describe('next declaration action', () => {
     const action = nextDeclarationAction({
       ...base,
       arrival: { entryKind: 'feed-entry', advancesSinceEntry: 20 },
-      declaration: declaration({ intent: 'purposeful' }),
+      declaration: declaration({ intent: 'purposeful', spentMs: 9_999_999 }),
       verdict: verdict({ confidence: 0.6 }),
     });
     expect(action).toEqual({ kind: 'none' });
@@ -168,9 +163,8 @@ describe('next declaration action', () => {
   it('never walls a deep-link item, whatever the model says', () => {
     const action = nextDeclarationAction({
       ...base,
-      usageMs: 9_999_999,
       arrival: { entryKind: 'deep-link', advancesSinceEntry: 0 },
-      declaration: declaration(),
+      declaration: declaration({ spentMs: 400_000 }),
       verdict: verdict({ confidence: 0.99 }),
     });
     expect(action).toEqual({ kind: 'none' });
