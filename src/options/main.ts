@@ -1,5 +1,7 @@
 import { DEFAULT_SETTINGS, PRIVACY_PROMISE, SUPPORTED_SITES } from '../shared/constants';
 import type {
+  ActivityEntry,
+  ActivityKind,
   BackgroundResponse,
   InterventionKind,
   InterventionRecord,
@@ -16,6 +18,17 @@ const INTERVENTION_LABELS: Record<InterventionKind, string> = {
   'close-tab': 'Close the tab',
   block: 'Block until tomorrow',
 };
+
+const ACTIVITY_LABELS: Record<ActivityKind, string> = {
+  'session-started': 'Session started',
+  'budget-spent': 'Timer ended',
+  'wall-shown': 'Wall shown',
+  'leave-pressed': 'Leave pressed',
+};
+
+function siteLabel(site: SiteId): string {
+  return SUPPORTED_SITES.find((entry) => entry.id === site)?.label ?? site;
+}
 
 const NUMBER_FIELDS = [
   { field: 'doomscrollBudgetMinutes', label: 'Doomscroll session budget (minutes)', min: 1, max: 60 },
@@ -201,6 +214,13 @@ export async function renderOptions(root: Element): Promise<void> {
   });
   form.append(save);
 
+  const timeline = element('section');
+  timeline.dataset['activityTimeline'] = '';
+  timeline.append(element('h2', 'Recent activity'));
+  const timelineList = element('ul');
+  timeline.append(timelineList);
+  form.append(timeline);
+
   const review = element('section');
   review.append(element('h2', 'Recent interventions'));
   const list = element('ul');
@@ -208,6 +228,22 @@ export async function renderOptions(root: Element): Promise<void> {
   form.append(review);
 
   root.append(form);
+
+  const activity = await request({ type: 'get-activity' });
+  const entries: ActivityEntry[] =
+    activity && activity.ok && activity.type === 'activity' ? activity.entries : [];
+
+  if (entries.length === 0) {
+    timelineList.append(element('li', 'Nothing yet — start a session on a watched feed.'));
+  }
+  // Newest first: the thing that just happened is the thing being looked for.
+  for (const item of [...entries].reverse()) {
+    const when = new Date(item.at).toLocaleString();
+    const row = element('li', `${when} — ${siteLabel(item.site)} — ${ACTIVITY_LABELS[item.kind]}`);
+    row.dataset['activityKind'] = item.kind;
+    row.append(element('span', ` — ${item.detail}`));
+    timelineList.append(row);
+  }
 
   const history = await request({ type: 'get-interventions' });
   const records: InterventionRecord[] =

@@ -1,6 +1,15 @@
 # Intent-Aware Doomscroll Sessions — Design
 
-**Status:** Approved, not yet planned.
+**Status:** Implemented, with one deliberate departure.
+
+> **Superseded in one place.** This document describes a two-button prompt, with
+> "Looking for something" as the second answer and dismissal resolving to it.
+> Commit `571b749` removed that option: the shipped prompt offers only the
+> doomscroll button, and dismissal declares nothing. The `purposeful` intent and
+> its 0.8-confidence model path remain in the engine and are still tested, but
+> no UI currently declares it. Everything else below is implemented as written,
+> except that a budget is now counted by a session-owned `spentMs` rather than
+> by subtracting a daily usage baseline — see the plan's deviations section.
 **Replaces** the veto-only classifier design previously in this file (commit
 `6c273c0`). Extends the shipped extension from
 `docs/superpowers/plans/2026-07-30-local-doomscrolling-coach.md`.

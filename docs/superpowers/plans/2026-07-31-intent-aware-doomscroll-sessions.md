@@ -206,9 +206,16 @@ npm run build
 - **Budget is measured against foreground usage,** not wall-clock time, because the spec
   says it is "counted against the same usage accounting already in place" — which only
   advances while the feed is actually in front of you.
-- **`DeclarationEntry` carries `usageAtStartMs` and `walledAt`** beyond the five fields
-  the spec lists, because a budget measured against usage needs an origin, and a
-  model-raised wall must survive worker teardown.
+- **`DeclarationEntry` carries `spentMs` and `walledAt`** beyond the five fields
+  the spec lists. The first attempt stored a `usageAtStartMs` baseline and
+  subtracted it from the daily usage counter; that counter resets at local
+  midnight, so a session declared at 23:59 got its whole budget back plus every
+  minute already spent that day. The session now owns its own consumed-time
+  counter. `walledAt` is there so a model-raised wall survives worker teardown.
+- **Declaration writes are serialized per site.** Message handlers interleave at
+  every `await`, so two tabs advancing the same feed could both claim the same
+  wall crossing and write duplicate records. A per-site promise chain makes each
+  read-modify-write atomic.
 - **Offscreen reason is `WORKERS`** (spec open risk 4): the enum has no AI value, and
   this is the member that actually describes the situation — the work cannot run in the
   service worker.

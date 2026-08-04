@@ -49,7 +49,19 @@ The extension treats an explicit start as the primary control, not a hidden
 score. Entering a feed asks:
 
 - **Doomscrolling — give me N minutes** — grants the per-site doomscroll budget
-  you set in Options (five minutes by default).
+  you set in Options (five minutes by default). The popup then shows a live
+  timer counting that budget up toward it.
+
+That is the only button. There is no "just looking" escape hatch and no free
+text: pressing Escape leaves the prompt where it is. Entering a feed on purpose
+means starting a session on purpose.
+
+The budget is spent against **foreground time on that feed**, not wall-clock
+time. Switching tabs pauses it. Closing the tab, refreshing, or reloading the
+extension does not reset it: the declaration and the milliseconds it has already
+consumed live in `chrome.storage.local`, so only its 30-minute cooldown expires
+it. That counter belongs to the session rather than to the day, so a session
+declared at 23:59 keeps its remaining budget through midnight.
 
 A direct Reel/Short link or in-app search gets one item without a prompt. The
 first advance past that item becomes a feed session. Ambiguous arrivals are
@@ -125,8 +137,66 @@ What it **does** store locally, in six keys:
 - `blocks` — which feed is blocked and until when
 - `return-pauses` — a pause that should be shown again if the feed is reopened
 - `declarations` — the current per-site intent and its local budget state
+- `activity` — up to 200 timeline entries: session started, timer ended, wall
+  shown, leave pressed
 
 Uninstalling the extension removes all of it.
+
+## Activity timeline
+
+The Options page shows a **Recent activity** list — the plain diary of a
+declared session, newest first:
+
+| Entry | When it is written |
+| --- | --- |
+| Session started | You answered the prompt (either answer) |
+| Timer ended | A doomscroll budget was spent |
+| Wall shown | The wall went up, once per session, with the reason |
+| Leave pressed | You left from the wall |
+
+It holds no page content — only the site, the moment, and a sentence built from
+your own settings.
+
+## Architecture
+
+```
+content script  ──events──▶  service worker  ──commands──▶  content script
+  provenance                   declarations                    prompt / wall
+  engagement                   budget + wall                   pause / notice
+  overlays                     activity log
+                                    │
+                                    ├─ chrome.storage.local (7 keys)
+                                    └─ offscreen document ─▶ on-device model
+```
+
+| Layer | Files | Responsibility |
+| --- | --- | --- |
+| Content | `src/content/` | Detect the view, classify how you arrived, collect per-item engagement, render every overlay. Owns no decisions. |
+| Engine | `src/engine/` | Pure functions: `declaration.ts` (budget + session state machine), `session-summary.ts` (aggregate payload), `score.ts`, `rules.ts`. No DOM, no storage, no clock of their own. |
+| Worker | `src/background/` | The only place that decides or enforces. Owns declarations, per-tab arrival state, the wall, and the activity log. |
+| Offscreen | `src/offscreen/` | Hosts the Prompt API, which cannot run in an MV3 service worker, and keeps one session warm. |
+| Shared | `src/shared/` | Types, constants, and the local-only storage layer. |
+
+Per-tab state (arrival kind, advances, engagement) is deliberately transient —
+it dies with the worker. Anything that must survive a teardown is persisted, so
+an idle worker, an extension reload, or a browser restart cannot hand back a
+budget you already spent.
+
+## Limitations
+
+Known and accepted, not bugs:
+
+- **The wall is dismissible.** Leaving and coming back gets past it for one
+  item. A hard block would break the friend's-link case, which matters more.
+- **Provenance is best-effort.** Referrers are often empty, so some feed entries
+  look like direct links and are not prompted. Under-prompting is the deliberate
+  choice.
+- **The model is optional and not always right.** It needs Chrome 138+ and a
+  flag, and a small on-device model can misjudge. It can only *prevent*
+  enforcement under a doomscroll declaration; it can end a *purposeful* session
+  only at 0.8 confidence, and never touches a direct-link item.
+- **Detection is selector-based.** A site redesign can silently stop it.
+- **Three feeds only**, macOS Chrome only, one profile, no sync.
 
 ## When it stops working
 

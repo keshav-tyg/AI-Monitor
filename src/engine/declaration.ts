@@ -21,8 +21,6 @@ export type DeclarationAction =
 export interface DeclarationInput {
   arrival: SessionArrival;
   declaration?: DeclarationEntry;
-  /** Foreground usage for this site today. */
-  usageMs: number;
   budgetMs: number;
   budgetMinutes: number;
   /** The model's answer, when one was obtained. Absent is the normal case. */
@@ -43,17 +41,21 @@ export function effectiveEntryKind(arrival: SessionArrival): EntryKind {
 
 export interface BudgetInput {
   declaration: DeclarationEntry;
-  usageMs: number;
   budgetMs: number;
 }
 
 /**
- * Measured against foreground usage rather than the clock, so a budget is not
+ * Measured against foreground time rather than the clock, so a budget is not
  * quietly spent by a tab sitting in the background.
+ *
+ * The counter belongs to the declaration itself. Deriving it from the daily
+ * usage total was wrong across a local-midnight rollover: the day's counter
+ * resets to zero while the declaration lives on, which handed the session its
+ * whole budget back — plus every minute already spent that day.
  */
 export function isBudgetSpent(input: BudgetInput): boolean {
   if (input.declaration.intent !== 'doomscroll') return false;
-  return input.usageMs - input.declaration.usageAtStartMs >= input.budgetMs;
+  return input.declaration.spentMs >= input.budgetMs;
 }
 
 /**
@@ -90,11 +92,7 @@ export function nextDeclarationAction(input: DeclarationInput): DeclarationActio
   if (declaration.walledAt !== undefined) return { kind: 'wall', reason: WALL_HELD_REASON };
 
   if (declaration.intent === 'doomscroll') {
-    const spent = isBudgetSpent({
-      declaration,
-      usageMs: input.usageMs,
-      budgetMs: input.budgetMs,
-    });
+    const spent = isBudgetSpent({ declaration, budgetMs: input.budgetMs });
     if (!spent) return { kind: 'none' };
     // The model may say this looks genuinely deliberate. That vetoes the wall.
     if (contradictsAtGate('doomscroll', input.verdict)) return { kind: 'none' };

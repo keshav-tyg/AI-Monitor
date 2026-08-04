@@ -1,6 +1,12 @@
-import { DEFAULT_SETTINGS, MAX_INTERVENTION_RECORDS, SITE_IDS } from './constants';
+import {
+  DEFAULT_SETTINGS,
+  MAX_ACTIVITY_RECORDS,
+  MAX_INTERVENTION_RECORDS,
+  SITE_IDS,
+} from './constants';
 import { todayKey } from './time';
 import type {
+  ActivityEntry,
   DeclarationEntry,
   InterventionFeedback,
   InterventionRecord,
@@ -20,6 +26,7 @@ const KEY_INTERVENTIONS = 'interventions';
 const KEY_BLOCKS = 'blocks';
 const KEY_RETURN_PAUSES = 'return-pauses';
 const KEY_DECLARATIONS = 'declarations';
+const KEY_ACTIVITY = 'activity';
 
 interface UsageEntry {
   day: string;
@@ -172,6 +179,18 @@ export async function getDeclaration(
 export async function saveDeclaration(entry: DeclarationEntry): Promise<void> {
   const stored = await readKey<DeclarationEntry[]>(KEY_DECLARATIONS, []);
   await writeKey(KEY_DECLARATIONS, [...stored.filter((item) => item.site !== entry.site), entry]);
+}
+
+/** Oldest first, so the options page can read top-to-bottom as it happened. */
+export async function listActivity(): Promise<ActivityEntry[]> {
+  return readKey<ActivityEntry[]>(KEY_ACTIVITY, []);
+}
+
+export async function appendActivity(entry: ActivityEntry): Promise<void> {
+  const entries = await listActivity();
+  const retained = entries.slice(-(MAX_ACTIVITY_RECORDS - 1));
+  retained.push(entry);
+  await writeKey(KEY_ACTIVITY, retained);
 }
 
 export async function clearDeclaration(site: SiteId): Promise<void> {

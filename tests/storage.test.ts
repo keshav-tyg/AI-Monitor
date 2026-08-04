@@ -23,7 +23,7 @@ function declaration(overrides: Partial<DeclarationEntry> = {}): DeclarationEntr
     entryKind: 'feed-entry',
     startedAt: 1_000,
     expiresAt: 61_000,
-    usageAtStartMs: 0,
+    spentMs: 0,
     ...overrides,
   };
 }
