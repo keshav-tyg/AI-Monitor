@@ -26,10 +26,10 @@ public final class TypingChallengeService {
     public boolean matches(TypingChallenge challenge, String candidate) {
         Objects.requireNonNull(challenge);
 
-        var matches = challenge.target().equals(candidate);
-        if (matches && challenge.equals(activeChallenge)) {
-            activeChallenge = null;
+        if (!challenge.equals(activeChallenge) || !challenge.target().equals(candidate)) {
+            return false;
         }
-        return matches;
+        activeChallenge = null;
+        return true;
     }
 }
