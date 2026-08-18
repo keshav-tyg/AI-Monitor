@@ -67,6 +67,19 @@ class SqliteStrictSessionRepositoryTest {
     }
 
     @Test
+    void clearingAReplacementSessionDoesNotRestoreThePreviousActiveSession(@TempDir Path directory) {
+        var repo = repository(directory);
+        var previous = activeTimed("00000000-0000-0000-0000-000000000006", NOW.plusSeconds(60));
+        var replacement = activeTimed("00000000-0000-0000-0000-000000000007", NOW.plusSeconds(120));
+        repo.save(previous);
+        repo.save(replacement);
+
+        repo.clear(replacement.id());
+
+        assertTrue(repo.loadActive().isEmpty());
+    }
+
+    @Test
     void expiredSessionIsNotLoadedAsActive(@TempDir Path directory) {
         var repo = repository(directory);
         var expired = activeTimed("00000000-0000-0000-0000-000000000005", NOW);

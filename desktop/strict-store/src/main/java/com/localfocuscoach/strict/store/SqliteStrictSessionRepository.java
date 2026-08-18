@@ -70,20 +70,41 @@ public final class SqliteStrictSessionRepository implements StrictSessionReposit
                     updated_at = excluded.updated_at
                 """;
         var auditedAt = Instant.now().toString();
-        try (var connection = openConnection();
-                var statement = connection.prepareStatement(sql)) {
-            statement.setString(1, session.id().toString());
-            statement.setString(2, session.mode().name());
-            statement.setString(3, session.startedAt().toString());
-            setInstant(statement, 4, session.endsAt());
-            statement.setInt(5, session.earlyExitChallenge() ? 1 : 0);
-            statement.setString(6, session.status().name());
-            setInstant(statement, 7, session.warningEndsAt());
-            statement.setString(8, auditedAt);
-            statement.setString(9, auditedAt);
-            statement.executeUpdate();
+        try (var connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                if (session.status() == SessionStatus.ACTIVE) {
+                    deleteOtherActiveSessions(connection, session.id());
+                }
+                try (var statement = connection.prepareStatement(sql)) {
+                    statement.setString(1, session.id().toString());
+                    statement.setString(2, session.mode().name());
+                    statement.setString(3, session.startedAt().toString());
+                    setInstant(statement, 4, session.endsAt());
+                    statement.setInt(5, session.earlyExitChallenge() ? 1 : 0);
+                    statement.setString(6, session.status().name());
+                    setInstant(statement, 7, session.warningEndsAt());
+                    statement.setString(8, auditedAt);
+                    statement.setString(9, auditedAt);
+                    statement.executeUpdate();
+                }
+                connection.commit();
+            } catch (SQLException exception) {
+                rollback(connection, exception);
+                throw exception;
+            }
         } catch (SQLException exception) {
             throw storageFailure("save session", exception);
+        }
+    }
+
+    private void deleteOtherActiveSessions(Connection connection, UUID retainedSessionId)
+            throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "DELETE FROM strict_session WHERE status = ? AND session_id <> ?")) {
+            statement.setString(1, SessionStatus.ACTIVE.name());
+            statement.setString(2, retainedSessionId.toString());
+            statement.executeUpdate();
         }
     }
 
