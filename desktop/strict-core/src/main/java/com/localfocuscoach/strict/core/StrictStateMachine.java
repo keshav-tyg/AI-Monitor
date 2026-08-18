@@ -21,6 +21,7 @@ public final class StrictStateMachine {
             return StrictAction.EXPIRE_SESSION;
         }
         if (!chromeRunning) {
+            session.cancelRestoreWarning();
             return StrictAction.NONE;
         }
         if (health == ConnectionHealth.HEALTHY) {
