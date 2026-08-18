@@ -21,11 +21,18 @@ class TypingChallengeServiceTest {
     }
 
     @Test
-    void requiresAnExactFullMatch() {
-        var challenge = new TypingChallenge(UUID.randomUUID(), "AbC", now);
+    void requiresAnExactFullMatchForTheActiveChallenge() {
+        var challenge = service.create(now);
 
-        assertTrue(service.matches(challenge, "AbC"));
-        assertFalse(service.matches(challenge, "Abc"));
-        assertFalse(service.matches(challenge, "AbC "));
+        assertFalse(service.matches(challenge, challenge.target() + " "));
+        assertTrue(service.matches(challenge, challenge.target()));
+        assertFalse(service.matches(challenge, challenge.target()));
+    }
+
+    @Test
+    void rejectsANonActiveChallenge() {
+        var nonActive = new TypingChallenge(UUID.randomUUID(), "AbC", now);
+
+        assertFalse(service.matches(nonActive, "AbC"));
     }
 }
