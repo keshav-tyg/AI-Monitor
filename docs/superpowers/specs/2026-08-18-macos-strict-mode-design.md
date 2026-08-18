@@ -100,10 +100,14 @@ Chrome starts the relay as its native-messaging host. The relay validates the
 Chrome-provided extension origin and forwards only a small protocol to the
 service: connect, heartbeat, disconnect, and service-state acknowledgement.
 
-The extension gains the `nativeMessaging` permission and uses
-`runtime.connectNative()` while Strict Mode is active. A native connection keeps
-the Manifest V3 service worker alive. The extension reconnects after a port
-disconnect. The host manifest permits only the production extension ID.
+The extension gains the `nativeMessaging` permission and keeps one minimal
+`runtime.connectNative()` port open while Chrome is running. This lets the
+service see an already-healthy extension immediately when a Strict Mode session
+starts, rather than confusing a normal start-up delay with a disabled extension.
+A native connection keeps the Manifest V3 service worker alive. The extension
+reconnects after a port disconnect. The host manifest permits only the
+production extension ID. Outside Strict Mode this connection is informational;
+it carries no browsing or feed data.
 
 ### Existing extension
 
