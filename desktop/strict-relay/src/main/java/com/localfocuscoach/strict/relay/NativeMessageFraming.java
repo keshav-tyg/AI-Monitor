@@ -1,5 +1,6 @@
 package com.localfocuscoach.strict.relay;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.EOFException;
@@ -8,6 +9,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -42,7 +45,16 @@ public final class NativeMessageFraming {
         if (payload.length != length) {
             throw new EOFException("Native message payload is truncated");
         }
-        var message = objectMapper.readTree(payload);
+        var json = StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(payload))
+                .toString();
+        var message = objectMapper
+                .reader()
+                .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                .readTree(json);
         if (message == null) {
             throw new IOException("Native message payload is empty");
         }

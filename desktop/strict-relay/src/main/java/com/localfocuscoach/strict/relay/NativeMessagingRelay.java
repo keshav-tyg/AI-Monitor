@@ -90,8 +90,9 @@ public final class NativeMessagingRelay {
         var connected = false;
         var disconnected = false;
         try {
-            writeNativeResponse(nativeOutput, exchange(service, "relay.connected"));
+            var connectedResponse = exchange(service, "relay.connected");
             connected = true;
+            writeNativeResponse(nativeOutput, connectedResponse);
             while (true) {
                 var message = framing.read(nativeInput);
                 if (message.isEmpty()) {

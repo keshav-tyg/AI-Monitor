@@ -67,6 +67,22 @@ final class NativeMessagingRelayTest {
     }
 
     @Test
+    void stdoutFailureAfterConnectedAckStillReportsExactlyOneDisconnect() throws Exception {
+        var service = serviceWithResponses(2);
+        var relay = relay(() -> service);
+
+        assertEquals(
+                1,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        InputStream.nullInputStream(),
+                        new FailingOutputStream(),
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        assertEquals(List.of("relay.connected", "relay.disconnected"), service.requestTypes());
+    }
+
+    @Test
     void wrongOriginReturnsErrorBeforeOpeningServiceSocket() throws Exception {
         var opens = new int[1];
         var chromeOutput = new ByteArrayOutputStream();
@@ -196,6 +212,13 @@ final class NativeMessagingRelayTest {
 
     private JsonNode firstNativeOutput(ByteArrayOutputStream output) throws IOException {
         return framing.read(new ByteArrayInputStream(output.toByteArray())).orElseThrow();
+    }
+
+    private static final class FailingOutputStream extends OutputStream {
+        @Override
+        public void write(int value) throws IOException {
+            throw new IOException("Chrome stdout is unavailable");
+        }
     }
 
     private final class FakeServiceConnection implements NativeMessagingRelay.ServiceConnection {
