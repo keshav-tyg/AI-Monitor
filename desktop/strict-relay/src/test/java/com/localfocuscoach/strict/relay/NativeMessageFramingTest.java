@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -51,5 +52,36 @@ final class NativeMessageFramingTest {
         assertThrows(
                 java.io.EOFException.class,
                 () -> framing.read(new ByteArrayInputStream(header)));
+    }
+
+    @Test
+    void malformedUtf8IsRejected() throws Exception {
+        var prefix = "{\"type\":\"".getBytes(StandardCharsets.UTF_8);
+        var suffix = "\"}".getBytes(StandardCharsets.UTF_8);
+        var payload = ByteBuffer.allocate(prefix.length + 2 + suffix.length)
+                .put(prefix)
+                .put((byte) 0xc3)
+                .put((byte) 0x28)
+                .put(suffix)
+                .array();
+
+        assertThrows(IOException.class, () -> framing.read(nativeFrame(payload)));
+    }
+
+    @Test
+    void trailingJsonValueIsRejected() throws Exception {
+        var payload = "{\"type\":\"heartbeat\"}{\"ignored\":true}"
+                .getBytes(StandardCharsets.UTF_8);
+
+        assertThrows(IOException.class, () -> framing.read(nativeFrame(payload)));
+    }
+
+    private ByteArrayInputStream nativeFrame(byte[] payload) {
+        var bytes = ByteBuffer.allocate(Integer.BYTES + payload.length)
+                .order(ByteOrder.nativeOrder())
+                .putInt(payload.length)
+                .put(payload)
+                .array();
+        return new ByteArrayInputStream(bytes);
     }
 }
