@@ -81,6 +81,17 @@ class StrictStateMachineTest {
         assertEquals(StrictAction.NONE, action);
     }
 
+    @Test
+    void reopeningChromeAfterItClosedDuringWarningStartsANewWarning() {
+        var session = timedEndingAt(now.plusSeconds(120));
+        machine.advance(session, ConnectionHealth.DISCONNECTED, true, now);
+        machine.advance(session, ConnectionHealth.DISCONNECTED, false, now.plusSeconds(10));
+
+        var action = machine.advance(session, ConnectionHealth.DISCONNECTED, true, now.plusSeconds(31));
+
+        assertEquals(StrictAction.SHOW_RESTORE_WARNING, action);
+    }
+
     private StrictSession activeTimed() {
         return timedEndingAt(now.plusSeconds(60));
     }
