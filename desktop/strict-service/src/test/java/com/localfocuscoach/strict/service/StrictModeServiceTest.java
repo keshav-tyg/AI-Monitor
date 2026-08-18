@@ -2,20 +2,27 @@ package com.localfocuscoach.strict.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.core.SessionStatus;
+import com.localfocuscoach.strict.core.StrictSession;
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
 import com.localfocuscoach.strict.store.SqliteStrictSessionRepository;
+import com.localfocuscoach.strict.store.StrictSessionRepository;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -221,6 +228,165 @@ class StrictModeServiceTest {
         assertTrue(repository.loadActive().isEmpty());
     }
 
+    @Test
+    void dashboardStartPersistsTheNewSessionExactlyOnce(@TempDir Path directory) {
+        var repository = new ControllableRepository(repository(directory));
+        service = new StrictModeService(SECRET, repository, new FakeChromeController(false));
+
+        service.handle(startMessage(SECRET), NOW);
+
+        assertEquals(1, repository.saveCount);
+        assertTrue(repository.loadActive().isPresent());
+    }
+
+    @Test
+    void transientProcessUncertaintyPreservesWarningThenDefersQuit(@TempDir Path directory) {
+        var repository = repository(directory);
+        var chrome = new MutableChromeController();
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(SECRET, repository, chrome, clock, scheduler);
+        service.handle(startMessage(SECRET), NOW);
+        var deadline = repository.loadActive().orElseThrow().warningEndsAt();
+
+        chrome.throwOnQuery = true;
+        service.handle(message(SECRET, "dashboard.status"), NOW.plusSeconds(10));
+
+        assertEquals(deadline, repository.loadActive().orElseThrow().warningEndsAt());
+        assertEquals(0, chrome.quitRequests);
+
+        chrome.throwOnQuery = false;
+        service.handle(message(SECRET, "dashboard.status"), deadline);
+
+        assertEquals(1, chrome.quitRequests);
+        assertTrue(repository.loadActive().isPresent());
+    }
+
+    @Test
+    void transientProcessUncertaintyKeepsIndefiniteEnforcementScheduled(@TempDir Path directory) {
+        var repository = repository(directory);
+        var chrome = new MutableChromeController();
+        chrome.throwOnQuery = true;
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(SECRET, repository, chrome, clock, scheduler);
+        service.handle(
+                new ProtocolMessage(
+                        1,
+                        SECRET,
+                        "dashboard.start",
+                        Map.of("mode", "INDEFINITE", "earlyExitChallenge", true)),
+                NOW);
+
+        chrome.throwOnQuery = false;
+        clock.advance(Duration.ofSeconds(1));
+        scheduler.runScheduledCheck();
+
+        assertEquals(NOW.plusSeconds(31), repository.loadActive().orElseThrow().warningEndsAt());
+    }
+
+    @Test
+    void schedulerSurvivesATransientRepositoryFailure(@TempDir Path directory) {
+        var repository = new ControllableRepository(repository(directory));
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(
+                SECRET, repository, new FakeChromeController(false), clock, scheduler);
+        service.handle(startMessage(SECRET), NOW);
+        repository.failNextLoad = true;
+        clock.advance(Duration.ofSeconds(300));
+
+        assertDoesNotThrow(scheduler::runScheduledCheck);
+        scheduler.runScheduledCheck();
+
+        assertTrue(repository.loadActive().isEmpty());
+    }
+
+    @Test
+    void completedDeadlineFutureIsRecreated(@TempDir Path directory) {
+        var repository = repository(directory);
+        var scheduler = new CompletedFutureScheduler();
+        service = new StrictModeService(
+                SECRET,
+                repository,
+                new FakeChromeController(false),
+                Clock.fixed(NOW, ZoneId.of("UTC")),
+                scheduler);
+
+        service.handle(startMessage(SECRET), NOW);
+        service.handle(message(SECRET, "dashboard.status"), NOW.plusSeconds(1));
+
+        assertEquals(2, scheduler.scheduleCount);
+    }
+
+    @Test
+    void schedulerRejectionDoesNotLeaveANewSessionActive(@TempDir Path directory) {
+        var repository = repository(directory);
+        service = new StrictModeService(
+                SECRET,
+                repository,
+                new FakeChromeController(false),
+                Clock.fixed(NOW, ZoneId.of("UTC")),
+                new RejectingScheduler());
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                RejectedExecutionException.class,
+                () -> service.handle(startMessage(SECRET), NOW));
+
+        assertTrue(repository.loadActive().isEmpty());
+    }
+
+    @Test
+    void warningExpiryRequestsExactlyOneGracefulQuit(@TempDir Path directory) {
+        var repository = repository(directory);
+        var chrome = new MutableChromeController();
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(SECRET, repository, chrome, clock, scheduler);
+        service.handle(startMessage(SECRET), NOW);
+
+        clock.advance(Duration.ofSeconds(30));
+        scheduler.runScheduledCheck();
+        scheduler.runScheduledCheck();
+
+        assertEquals(1, chrome.quitRequests);
+        assertTrue(repository.loadActive().isPresent());
+    }
+
+    @Test
+    void failedGracefulQuitLeavesTheSessionActive(@TempDir Path directory) {
+        var repository = repository(directory);
+        var chrome = new MutableChromeController();
+        chrome.quitResult = ChromeController.QuitResult.FAILED;
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(SECRET, repository, chrome, clock, scheduler);
+        service.handle(startMessage(SECRET), NOW);
+
+        clock.advance(Duration.ofSeconds(30));
+        scheduler.runScheduledCheck();
+
+        assertEquals(1, chrome.quitRequests);
+        assertTrue(repository.loadActive().isPresent());
+    }
+
+    @Test
+    void throwingGracefulQuitLeavesTheSessionActive(@TempDir Path directory) {
+        var repository = repository(directory);
+        var chrome = new MutableChromeController();
+        chrome.throwOnQuit = true;
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(SECRET, repository, chrome, clock, scheduler);
+        service.handle(startMessage(SECRET), NOW);
+
+        clock.advance(Duration.ofSeconds(30));
+        assertDoesNotThrow(scheduler::runScheduledCheck);
+
+        assertEquals(1, chrome.quitRequests);
+        assertTrue(repository.loadActive().isPresent());
+    }
+
     private SqliteStrictSessionRepository repository(Path directory) {
         return new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
     }
@@ -270,6 +436,66 @@ class StrictModeServiceTest {
         }
     }
 
+    private static final class MutableChromeController implements ChromeController {
+        private boolean running = true;
+        private boolean throwOnQuery;
+        private boolean throwOnQuit;
+        private int quitRequests;
+        private QuitResult quitResult = QuitResult.REQUESTED;
+
+        @Override
+        public boolean isRunning() {
+            if (throwOnQuery) {
+                throw new IllegalStateException("process state unavailable");
+            }
+            return running;
+        }
+
+        @Override
+        public QuitResult requestGracefulQuit() {
+            quitRequests++;
+            if (throwOnQuit) {
+                throw new IllegalStateException("quit unavailable");
+            }
+            return quitResult;
+        }
+    }
+
+    private static final class ControllableRepository implements StrictSessionRepository {
+        private final StrictSessionRepository delegate;
+        private boolean failNextLoad;
+        private int saveCount;
+
+        private ControllableRepository(StrictSessionRepository delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Optional<StrictSession> loadActive() {
+            if (failNextLoad) {
+                failNextLoad = false;
+                throw new IllegalStateException("temporary database failure");
+            }
+            return delegate.loadActive();
+        }
+
+        @Override
+        public void save(StrictSession session) {
+            saveCount++;
+            delegate.save(session);
+        }
+
+        @Override
+        public void clear(UUID sessionId) {
+            delegate.clear(sessionId);
+        }
+
+        @Override
+        public void appendAudit(UUID sessionId, String event, Instant at) {
+            delegate.appendAudit(sessionId, event, at);
+        }
+    }
+
     private static final class MutableClock extends Clock {
         private Instant now;
 
@@ -314,6 +540,70 @@ class StrictModeServiceTest {
         private void runScheduledCheck() {
             assertNotNull(scheduledCheck);
             scheduledCheck.run();
+        }
+    }
+
+    private static final class CompletedFutureScheduler extends ScheduledThreadPoolExecutor {
+        private int scheduleCount;
+
+        private CompletedFutureScheduler() {
+            super(1);
+        }
+
+        @Override
+        public ScheduledFuture<?> scheduleAtFixedRate(
+                Runnable command, long initialDelay, long period, TimeUnit unit) {
+            scheduleCount++;
+            return new CompletedScheduledFuture();
+        }
+    }
+
+    private static final class RejectingScheduler extends ScheduledThreadPoolExecutor {
+        private RejectingScheduler() {
+            super(1);
+        }
+
+        @Override
+        public ScheduledFuture<?> scheduleAtFixedRate(
+                Runnable command, long initialDelay, long period, TimeUnit unit) {
+            throw new RejectedExecutionException("scheduler unavailable");
+        }
+    }
+
+    private static final class CompletedScheduledFuture implements ScheduledFuture<Object> {
+        @Override
+        public long getDelay(TimeUnit unit) {
+            return 0;
+        }
+
+        @Override
+        public int compareTo(java.util.concurrent.Delayed other) {
+            return 0;
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return false;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return false;
+        }
+
+        @Override
+        public boolean isDone() {
+            return true;
+        }
+
+        @Override
+        public Object get() {
+            return null;
+        }
+
+        @Override
+        public Object get(long timeout, TimeUnit unit) {
+            return null;
         }
     }
 }

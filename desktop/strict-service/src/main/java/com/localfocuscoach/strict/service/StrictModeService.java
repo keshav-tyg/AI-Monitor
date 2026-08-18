@@ -45,6 +45,7 @@ public final class StrictModeService implements AutoCloseable {
     private TypingChallenge activeChallenge;
     private Instant lastQuitWarningDeadline;
     private ScheduledFuture<?> scheduledCheck;
+    private boolean chromeStateUncertain;
     private boolean closed;
 
     public StrictModeService(
@@ -77,7 +78,7 @@ public final class StrictModeService implements AutoCloseable {
         this.scheduler = Objects.requireNonNull(scheduler);
         var recovered = repository.loadActive().orElse(null);
         if (recovered != null) {
-            advanceAndSave(recovered, clock.instant());
+            advancePersistAndAct(recovered, clock.instant());
         }
         updateSchedule(recovered != null && recovered.status() == SessionStatus.ACTIVE ? recovered : null);
     }
@@ -99,7 +100,7 @@ public final class StrictModeService implements AutoCloseable {
             return authenticatedError("error.invalidRequest");
         }
 
-        var response = switch (message.type()) {
+        return switch (message.type()) {
             case "dashboard.start" -> start(message.payload(), now);
             case "dashboard.status" -> status(message.payload(), now);
             case "dashboard.beginUnlock" -> beginUnlock(message.payload(), now);
@@ -110,8 +111,6 @@ public final class StrictModeService implements AutoCloseable {
                     updateConnection(message.payload(), ConnectionHealth.DISCONNECTED, now);
             default -> authenticatedError("error.invalidRequest");
         };
-        updateSchedule(repository.loadActive().orElse(null));
-        return response;
     }
 
     private ProtocolMessage start(Map<String, Object> payload, Instant now) {
@@ -154,8 +153,13 @@ public final class StrictModeService implements AutoCloseable {
         activeChallenge = null;
         var session = new StrictSession(
                 UUID.randomUUID(), mode, now, endsAt, earlyExitChallenge, SessionStatus.ACTIVE);
-        repository.save(session);
-        advanceAndSave(session, now);
+        advancePersistAndAct(session, now);
+        try {
+            updateSchedule(session);
+        } catch (RuntimeException exception) {
+            repository.clear(session.id());
+            throw exception;
+        }
         return statusResponse(session);
     }
 
@@ -165,10 +169,12 @@ public final class StrictModeService implements AutoCloseable {
         }
         var active = repository.loadActive();
         if (active.isEmpty()) {
+            updateSchedule(null);
             return authenticatedResponse("service.status", Map.of("active", false));
         }
         var session = active.orElseThrow();
-        advanceAndSave(session, now);
+        advancePersistAndAct(session, now);
+        updateSchedule(session.status() == SessionStatus.ACTIVE ? session : null);
         return session.status() == SessionStatus.ACTIVE
                 ? statusResponse(session)
                 : authenticatedResponse("service.status", Map.of("active", false));
@@ -208,6 +214,7 @@ public final class StrictModeService implements AutoCloseable {
         repository.clear(active.orElseThrow().id());
         activeChallenge = null;
         lastQuitWarningDeadline = null;
+        updateSchedule(null);
         return authenticatedResponse("service.unlockResult", Map.of("unlocked", true));
     }
 
@@ -222,18 +229,42 @@ public final class StrictModeService implements AutoCloseable {
         }
         var active = repository.loadActive();
         if (active.isEmpty()) {
+            updateSchedule(null);
             return authenticatedResponse("service.ack", Map.of());
         }
         var session = active.orElseThrow();
-        advanceAndSave(session, now);
+        advancePersistAndAct(session, now);
+        updateSchedule(session.status() == SessionStatus.ACTIVE ? session : null);
         return session.status() == SessionStatus.ACTIVE
                 ? statusResponse(session)
                 : authenticatedResponse("service.status", Map.of("active", false));
     }
 
-    private void advanceAndSave(StrictSession session, Instant now) {
-        var action = stateMachine.advance(session, connectionHealth, chromeIsRunning(), now);
+    private void advancePersistAndAct(StrictSession session, Instant now) {
+        var action = advanceInMemory(session, now);
         repository.save(session);
+        performAction(session, action);
+    }
+
+    private StrictAction advanceInMemory(StrictSession session, Instant now) {
+        if (connectionHealth == ConnectionHealth.HEALTHY) {
+            chromeStateUncertain = false;
+            return stateMachine.advance(session, connectionHealth, true, now);
+        }
+        var chromeState = chromeProcessState();
+        if (chromeState == ChromeProcessState.UNKNOWN) {
+            chromeStateUncertain = true;
+            if (session.mode() == StrictMode.TIMED && !now.isBefore(session.endsAt())) {
+                return stateMachine.advance(session, connectionHealth, false, now);
+            }
+            return StrictAction.NONE;
+        }
+        chromeStateUncertain = false;
+        return stateMachine.advance(
+                session, connectionHealth, chromeState == ChromeProcessState.RUNNING, now);
+    }
+
+    private void performAction(StrictSession session, StrictAction action) {
         if (action == StrictAction.SHOW_RESTORE_WARNING) {
             lastQuitWarningDeadline = null;
         } else if (action == StrictAction.QUIT_CHROME
@@ -243,11 +274,13 @@ public final class StrictModeService implements AutoCloseable {
         }
     }
 
-    private boolean chromeIsRunning() {
+    private ChromeProcessState chromeProcessState() {
         try {
-            return chromeController.isRunning();
+            return chromeController.isRunning()
+                    ? ChromeProcessState.RUNNING
+                    : ChromeProcessState.NOT_RUNNING;
         } catch (RuntimeException exception) {
-            return false;
+            return ChromeProcessState.UNKNOWN;
         }
     }
 
@@ -256,6 +289,14 @@ public final class StrictModeService implements AutoCloseable {
             chromeController.requestGracefulQuit();
         } catch (RuntimeException exception) {
             // An unavailable controller leaves the session active and never escalates to force kill.
+        }
+    }
+
+    private void safeScheduledAdvance() {
+        try {
+            scheduledAdvance();
+        } catch (RuntimeException exception) {
+            // Fixed-rate tasks stop after an uncaught failure; retain the next deadline check.
         }
     }
 
@@ -269,7 +310,7 @@ public final class StrictModeService implements AutoCloseable {
             return;
         }
         var session = active.orElseThrow();
-        advanceAndSave(session, clock.instant());
+        advancePersistAndAct(session, clock.instant());
         updateSchedule(session.status() == SessionStatus.ACTIVE ? session : null);
     }
 
@@ -277,10 +318,14 @@ public final class StrictModeService implements AutoCloseable {
         var needsCheck = session != null
                 && session.status() == SessionStatus.ACTIVE
                 && (session.warningEndsAt() != null
-                        || (session.mode() == StrictMode.TIMED && session.endsAt() != null));
-        if (needsCheck && (scheduledCheck == null || scheduledCheck.isCancelled())) {
+                        || (session.mode() == StrictMode.TIMED && session.endsAt() != null)
+                        || chromeStateUncertain);
+        if (needsCheck
+                && (scheduledCheck == null
+                        || scheduledCheck.isCancelled()
+                        || scheduledCheck.isDone())) {
             scheduledCheck = scheduler.scheduleAtFixedRate(
-                    this::scheduledAdvance, 1, 1, TimeUnit.SECONDS);
+                    this::safeScheduledAdvance, 1, 1, TimeUnit.SECONDS);
         } else if (!needsCheck && scheduledCheck != null) {
             scheduledCheck.cancel(false);
             scheduledCheck = null;
@@ -328,5 +373,11 @@ public final class StrictModeService implements AutoCloseable {
             scheduledCheck = null;
         }
         scheduler.shutdownNow();
+    }
+
+    private enum ChromeProcessState {
+        RUNNING,
+        NOT_RUNNING,
+        UNKNOWN
     }
 }
