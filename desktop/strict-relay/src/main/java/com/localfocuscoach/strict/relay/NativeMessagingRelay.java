@@ -32,6 +32,8 @@ public final class NativeMessagingRelay {
     private static final Set<String> EXTENSION_FIELDS = Set.of("version", "type", "payload");
     private static final Set<String> SERVICE_FIELDS =
             Set.of("version", "secret", "type", "payload");
+    private static final Set<String> NATIVE_SERVICE_RESPONSE_TYPES =
+            Set.of("service.ack", "service.focusSettings");
     private static final List<String> NATIVE_HOST_NAMES = List.of(
             "com.localfocuscoach.strict_mode", "com.localfocuscoach.strict_mode_dev");
 
@@ -103,14 +105,24 @@ public final class NativeMessagingRelay {
                     exchange(service, "relay.disconnected");
                     return 0;
                 }
-                var type = extensionMessageType(message.orElseThrow());
-                if (type == null) {
+                var request = extensionRequest(message.orElseThrow());
+                if (request == null) {
                     diagnostics.println("Rejected invalid extension message");
                     writeError(nativeOutput, diagnostics, "invalidMessage");
                     continue;
                 }
-                if (type.equals("extension.heartbeat")) {
-                    writeNativeResponse(nativeOutput, exchange(service, "relay.heartbeat"));
+                switch (request.type()) {
+                    case "extension.heartbeat" ->
+                            writeNativeResponse(nativeOutput, exchange(service, "relay.heartbeat"));
+                    case "extension.focusSettings.sync" -> writeNativeResponse(
+                            nativeOutput,
+                            exchange(service, "relay.focusSettings.sync", request.payload()));
+                    case "extension.openDashboard" -> writeNativeResponse(
+                            nativeOutput,
+                            exchange(service, "relay.focusSettings.openDashboard"));
+                    default -> {
+                        // extension.hello establishes the native port but needs no service action.
+                    }
                 }
             }
         } finally {
@@ -125,11 +137,16 @@ public final class NativeMessagingRelay {
     }
 
     private JsonNode exchange(ServiceConnection service, String type) throws IOException {
+        return exchange(service, type, objectMapper.createObjectNode());
+    }
+
+    private JsonNode exchange(ServiceConnection service, String type, JsonNode payload)
+            throws IOException {
         var request = objectMapper.createObjectNode()
                 .put("version", PROTOCOL_VERSION)
                 .put("secret", secret)
                 .put("type", type)
-                .set("payload", objectMapper.createObjectNode());
+                .set("payload", payload.deepCopy());
         service.output().write(objectMapper.writeValueAsBytes(request));
         service.output().write('\n');
         service.output().flush();
@@ -165,6 +182,7 @@ public final class NativeMessagingRelay {
                 || !response.path("secret").isTextual()
                 || !secret.equals(response.path("secret").textValue())
                 || !response.path("type").isTextual()
+                || !NATIVE_SERVICE_RESPONSE_TYPES.contains(response.path("type").textValue())
                 || !response.path("payload").isObject()) {
             throw new IOException("Strict Mode service returned an invalid response");
         }
@@ -180,20 +198,37 @@ public final class NativeMessagingRelay {
         framing.write(nativeOutput, nativeResponse);
     }
 
-    private String extensionMessageType(JsonNode message) {
+    private RelayRequest extensionRequest(JsonNode message) {
         if (!message.isObject()
                 || !hasExactFields(message, EXTENSION_FIELDS)
                 || !message.path("version").isIntegralNumber()
                 || message.path("version").intValue() != PROTOCOL_VERSION
                 || !message.path("type").isTextual()
-                || !message.path("payload").isObject()
-                || message.path("payload").size() != 0) {
+                || !message.path("payload").isObject()) {
             return null;
         }
         var type = message.path("type").textValue();
-        return type.equals("extension.hello") || type.equals("extension.heartbeat")
-                ? type
-                : null;
+        var payload = message.path("payload");
+        return switch (type) {
+            case "extension.hello", "extension.heartbeat", "extension.openDashboard" ->
+                    payload.size() == 0 ? new RelayRequest(type, payload) : null;
+            case "extension.focusSettings.sync" -> validFocusSettingsSyncPayload(payload)
+                    ? new RelayRequest(type, payload)
+                    : null;
+            default -> null;
+        };
+    }
+
+    private boolean validFocusSettingsSyncPayload(JsonNode payload) {
+        if (!(hasExactFields(payload, Set.of("appliedRevision"))
+                || hasExactFields(payload, Set.of("appliedRevision", "legacySettings")))) {
+            return false;
+        }
+        var appliedRevision = payload.path("appliedRevision");
+        return appliedRevision.isIntegralNumber()
+                && appliedRevision.canConvertToLong()
+                && appliedRevision.longValue() >= 0
+                && (!payload.has("legacySettings") || payload.path("legacySettings").isObject());
     }
 
     private boolean hasExactFields(JsonNode node, Set<String> expected) {
@@ -332,6 +367,8 @@ public final class NativeMessagingRelay {
         @Override
         void close() throws IOException;
     }
+
+    private record RelayRequest(String type, JsonNode payload) {}
 
     private static final class UnixServiceConnectionFactory implements ServiceConnectionFactory {
         private final Path socketPath;

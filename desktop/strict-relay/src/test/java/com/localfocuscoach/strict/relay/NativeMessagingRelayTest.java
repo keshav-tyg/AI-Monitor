@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -153,6 +154,120 @@ final class NativeMessagingRelayTest {
     }
 
     @Test
+    void syncForwardsOnlyRevisionAndOptionalLegacySettings() throws Exception {
+        var legacySettings = objectMapper.readTree("{\"rules\":[]}");
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(3);
+        var relay = relay(() -> service);
+
+        assertEquals(
+                0,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        nativeInput(sync(4L, legacySettings)),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        var request = service.requests().get(1);
+        assertEquals("relay.focusSettings.sync", request.path("type").textValue());
+        assertEquals(4L, request.path("payload").path("appliedRevision").longValue());
+        assertEquals(legacySettings, request.path("payload").path("legacySettings"));
+        assertEquals(Set.of("appliedRevision", "legacySettings"), fieldNames(request.path("payload")));
+    }
+
+    @Test
+    void rejectsExtraFieldsAndNeverForwardsPageContent() throws Exception {
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(2);
+        var relay = relay(() -> service);
+
+        assertEquals(
+                0,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        nativeInput(raw("extension.focusSettings.sync", "{\"text\":\"page\"}")),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        assertEquals(List.of("relay.connected", "relay.disconnected"), service.requestTypes());
+        assertFalse(service.requests().stream().anyMatch(request -> request.toString().contains("page")));
+        assertEquals(List.of("service.ack", "relay.error"), nativeOutputTypes(chromeOutput));
+    }
+
+    @Test
+    void openDashboardForwardsOnlyAnExactEmptyPayload() throws Exception {
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(3);
+        var relay = relay(() -> service);
+
+        assertEquals(
+                0,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        nativeInput(
+                                extensionMessage("extension.openDashboard"),
+                                raw("extension.openDashboard", "{\"page\":\"content\"}")),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        var request = service.requests().get(1);
+        assertEquals("relay.focusSettings.openDashboard", request.path("type").textValue());
+        assertTrue(request.path("payload").isEmpty());
+        assertEquals(
+                List.of("relay.connected", "relay.focusSettings.openDashboard", "relay.disconnected"),
+                service.requestTypes());
+        assertEquals(
+                List.of("service.ack", "service.ack", "relay.error"), nativeOutputTypes(chromeOutput));
+    }
+
+    @Test
+    void forwardsSettingsSnapshotWithoutServiceSecret() throws Exception {
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(
+                serviceResponse("service.ack", objectMapper.createObjectNode()),
+                serviceResponse(
+                        "service.focusSettings",
+                        objectMapper.readTree(
+                                "{\"revision\":4,\"settings\":{},\"chromeAppliedRevision\":4}")),
+                serviceResponse("service.ack", objectMapper.createObjectNode()));
+        var relay = relay(() -> service);
+
+        assertEquals(
+                0,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        nativeInput(sync(4L)),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        var output = new ByteArrayInputStream(chromeOutput.toByteArray());
+        framing.read(output).orElseThrow();
+        var response = framing.read(output).orElseThrow();
+        assertEquals("service.focusSettings", response.path("type").textValue());
+        assertFalse(response.has("secret"));
+    }
+
+    @Test
+    void rejectsUnexpectedServiceResponseTypesInsteadOfForwardingThem() throws Exception {
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(
+                serviceResponse("service.ack", objectMapper.createObjectNode()),
+                serviceResponse("service.status", objectMapper.createObjectNode()),
+                serviceResponse("service.ack", objectMapper.createObjectNode()));
+        var relay = relay(() -> service);
+
+        assertEquals(
+                1,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        nativeInput(sync(4L)),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        assertEquals(List.of("service.ack", "relay.error"), nativeOutputTypes(chromeOutput));
+    }
+
+    @Test
     void installedManifestMustNameExactlyOneChromeExtensionOrigin(@TempDir Path directory)
             throws Exception {
         var manifest = directory.resolve("com.localfocuscoach.strict_mode.json");
@@ -225,21 +340,61 @@ final class NativeMessagingRelayTest {
     }
 
     private JsonNode extensionMessage(String type) {
+        return extensionMessage(type, objectMapper.createObjectNode());
+    }
+
+    private JsonNode extensionMessage(String type, JsonNode payload) {
         return objectMapper.createObjectNode()
                 .put("version", 1)
                 .put("type", type)
-                .set("payload", objectMapper.createObjectNode());
+                .set("payload", payload);
+    }
+
+    private JsonNode sync(long appliedRevision) {
+        return sync(appliedRevision, null);
+    }
+
+    private JsonNode sync(long appliedRevision, JsonNode legacySettings) {
+        var payload = objectMapper.createObjectNode().put("appliedRevision", appliedRevision);
+        if (legacySettings != null) {
+            payload.set("legacySettings", legacySettings);
+        }
+        return extensionMessage("extension.focusSettings.sync", payload);
+    }
+
+    private JsonNode raw(String type, String payload) throws IOException {
+        return extensionMessage(type, objectMapper.readTree(payload));
     }
 
     private FakeServiceConnection serviceWithResponses(int count) throws IOException {
-        var responses = new ByteArrayOutputStream();
+        var responses = new JsonNode[count];
         for (var index = 0; index < count; index++) {
-            responses.write(("{\"version\":1,\"secret\":\""
-                            + SECRET
-                            + "\",\"type\":\"service.ack\",\"payload\":{}}\n")
-                    .getBytes(StandardCharsets.UTF_8));
+            responses[index] = serviceResponse("service.ack", objectMapper.createObjectNode());
+        }
+        return serviceWithResponses(responses);
+    }
+
+    private FakeServiceConnection serviceWithResponses(JsonNode... messages) throws IOException {
+        var responses = new ByteArrayOutputStream();
+        for (var message : messages) {
+            responses.write(objectMapper.writeValueAsBytes(message));
+            responses.write('\n');
         }
         return new FakeServiceConnection(responses.toByteArray());
+    }
+
+    private JsonNode serviceResponse(String type, JsonNode payload) {
+        return objectMapper.createObjectNode()
+                .put("version", 1)
+                .put("secret", SECRET)
+                .put("type", type)
+                .set("payload", payload);
+    }
+
+    private Set<String> fieldNames(JsonNode object) {
+        var names = new java.util.HashSet<String>();
+        object.fieldNames().forEachRemaining(names::add);
+        return names;
     }
 
     private List<String> nativeOutputTypes(ByteArrayOutputStream output) throws IOException {
