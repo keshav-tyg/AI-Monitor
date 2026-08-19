@@ -1,7 +1,7 @@
 import {
   acceptDesktopSnapshot,
-  loadDesktopSettingsSnapshot,
   parseServiceFocusSettingsMessage,
+  readDesktopSettingsCache,
   toDesktopSettingsPayload,
   type DesktopSettingsPayload,
 } from '../shared/desktop-settings';
@@ -104,9 +104,10 @@ function settingsSyncMessage(
 }
 
 async function postSettingsSync(port: chrome.runtime.Port): Promise<void> {
-  const cached = await loadDesktopSettingsSnapshot();
+  let cache = await readDesktopSettingsCache();
+  let cached = cache.readable ? cache.snapshot : undefined;
   let legacySettings: DesktopSettingsPayload | undefined;
-  if (!cached) {
+  if (cache.readable && !cached) {
     try {
       const legacy = await legacySettingsForImport();
       legacySettings = legacy ? toDesktopSettingsPayload(legacy) : undefined;
@@ -114,6 +115,13 @@ async function postSettingsSync(port: chrome.runtime.Port): Promise<void> {
       // Storage failure is indistinguishable from a fresh install for safety:
       // ask the service for its disabled defaults without migration data.
     }
+
+    // A service response can populate the cache while the legacy read is in
+    // flight. Re-establish the applied revision after that final await, and
+    // never migrate browser settings when cache state cannot be confirmed.
+    cache = await readDesktopSettingsCache();
+    cached = cache.readable ? cache.snapshot : undefined;
+    if (!cache.readable || cached) legacySettings = undefined;
   }
   if (!running || activePort !== port) return;
   post(port, settingsSyncMessage(cached?.revision ?? 0, legacySettings));

@@ -44,6 +44,14 @@ it('accepts only a strictly newer validated desktop snapshot', async () => {
   expect((await loadDesktopSettingsSnapshot())?.revision).toBe(5);
 });
 
+it('does not overwrite a newer cache when its current revision cannot be read', async () => {
+  await saveDesktopSettingsSnapshot({ revision: 10, settings: validSettings });
+  vi.spyOn(chrome.storage.local, 'get').mockRejectedValueOnce(new Error('storage unavailable'));
+
+  expect(await acceptDesktopSnapshot({ revision: 5, settings: validSettings })).toBe(false);
+  expect((await loadDesktopSettingsSnapshot())?.revision).toBe(10);
+});
+
 it('treats a malformed persisted cache as absent', async () => {
   await chrome.storage.local.set({
     'desktop-settings-snapshot': {

@@ -92,6 +92,12 @@ describe('local persistence', () => {
     expect(await loadEnforcementSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
+  it('fails open when the desktop cache cannot be read', async () => {
+    vi.spyOn(chrome.storage.local, 'get').mockRejectedValueOnce(new Error('storage unavailable'));
+
+    expect(await loadEnforcementSettings()).toEqual(DEFAULT_SETTINGS);
+  });
+
   it('resets one site usage when the local day changes', async () => {
     await addUsage('instagram-reels', 120_000, Date.parse('2026-07-30T23:59:00'));
     expect(await getUsage('instagram-reels', Date.parse('2026-07-31T00:01:00'))).toBe(0);

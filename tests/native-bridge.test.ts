@@ -125,6 +125,48 @@ it('never offers legacy settings after a desktop snapshot has been applied', asy
   });
 });
 
+it('rechecks the applied revision after an in-flight legacy read', async () => {
+  const originalGet = chrome.storage.local.get.bind(chrome.storage.local);
+  let legacyReadStarted: (() => void) | undefined;
+  let finishLegacyRead: ((value: Record<string, unknown>) => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    legacyReadStarted = resolve;
+  });
+  const legacyRead = new Promise<Record<string, unknown>>((resolve) => {
+    finishLegacyRead = resolve;
+  });
+  let markApplied: (() => void) | undefined;
+  const applied = new Promise<void>((resolve) => {
+    markApplied = resolve;
+  });
+  vi.spyOn(chrome.storage.local, 'get').mockImplementation((keys) => {
+    if (keys !== 'settings') return originalGet(keys);
+    legacyReadStarted?.();
+    return legacyRead;
+  });
+  await chrome.storage.local.set({ settings: enabledSettings });
+
+  startNativeBridge(() => markApplied?.());
+  await started;
+  spies.nativePorts[0]?.emitMessage({
+    version: 1,
+    type: 'service.focusSettings',
+    payload: { revision: 3, settings: nativeEnabledSettings, chromeAppliedRevision: 0 },
+  });
+  await applied;
+  finishLegacyRead?.({ settings: enabledSettings });
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(spies.nativePorts[0]?.postMessage.mock.calls).toEqual([
+    [HELLO],
+    [{
+      version: 1,
+      type: 'extension.focusSettings.sync',
+      payload: { appliedRevision: 3 },
+    }],
+  ]);
+});
+
 it('still requests safe desktop defaults when local storage is unavailable', async () => {
   vi.spyOn(chrome.storage.local, 'get').mockRejectedValue(new Error('storage unavailable'));
 
