@@ -38,6 +38,7 @@ val generateServiceBootstrap by tasks.registering {
             package com.localfocuscoach.strict.service;
 
             import com.localfocuscoach.strict.protocol.ProtocolCodec;
+            import com.localfocuscoach.strict.store.SqliteFocusSettingsRepository;
             import com.localfocuscoach.strict.store.SqliteStrictSessionRepository;
             import java.nio.file.Files;
             import java.time.Clock;
@@ -48,12 +49,15 @@ val generateServiceBootstrap by tasks.registering {
                 public static void main(String[] args) throws Exception {
                     var appSupport = InstallSecret.defaultAppSupportDirectory();
                     Files.createDirectories(appSupport);
-                    var repository = new SqliteStrictSessionRepository(
-                            appSupport.resolve("strict-mode.sqlite3"));
+                    var database = appSupport.resolve("strict-mode.sqlite3");
+                    var repository = new SqliteStrictSessionRepository(database);
+                    var focusSettingsRepository = new SqliteFocusSettingsRepository(database);
                     var service = new StrictModeService(
                             InstallSecret.loadOrCreateDefault(),
                             repository,
+                            focusSettingsRepository,
                             new MacChromeController(),
+                            new MacDashboardLauncher(),
                             new MacRestoreWarningNotifier());
                     var server = new UnixSocketServer(
                             UnixSocketServer.defaultSocketPath(),
