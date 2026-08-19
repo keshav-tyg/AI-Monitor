@@ -6,6 +6,33 @@ they exercise tab closing, network rules, notifications, and live site markup.
 Run through this list against a fresh `npm run build` + **Load unpacked** of
 `dist/` before calling a change done.
 
+## Desktop-owned Focus Rules
+
+- [ ] **Load the generated extension directory.** After `npm run build`, use
+      Chrome's **Load unpacked** picker to select this repository's `dist/`
+      directory, not the repository root. Confirm the extension starts without
+      a manifest-load error.
+- [ ] **First-run migration imports once.** Begin with an old browser settings
+      record and no desktop Focus Rules record. Connect the installed companion,
+      open its dashboard, and confirm those rules arrive as revision 1. Edit and
+      save a rule in the dashboard, reconnect Chrome, and confirm the old
+      browser record cannot overwrite the newer desktop revision.
+- [ ] **Dashboard save syncs within five seconds.** With Chrome connected,
+      change a site rule in the dashboard and save. Confirm the dashboard
+      reports **Synced with Chrome** and Chrome enforces the matching revision
+      within one five-second native sync interval.
+- [ ] **Cached enforcement survives a disconnect.** With a valid desktop
+      revision already applied, disconnect the native host. Confirm cached
+      rules still enforce and the dashboard reports **Waiting for Chrome**;
+      reconnect and confirm it returns to **Synced with Chrome**.
+- [ ] **Strict Mode rejects weakening edits.** During an active Strict Mode
+      session, confirm a larger budget, higher warning score, longer grace
+      period, disabling protection, or changing intervention order is rejected.
+      Confirm a shorter budget is accepted.
+- [ ] **Options only opens the dashboard.** Open the Chrome Options page.
+      Confirm it has no editable Focus Rule inputs or save action, then choose
+      **Open Local Focus Coach** and confirm the installed dashboard opens.
+
 ## Strict Mode companion
 
 The existing extension checks below remain useful on their own. The companion
@@ -27,7 +54,7 @@ extension ID, or a system-wide LaunchDaemon.
 - [ ] **A disabled rule enforces nothing.** With the site rule off but global
       protection on, scroll past the threshold. Nothing happens.
 - [ ] **Emergency disable takes effect immediately.** While a session is
-      running, turn protection off in Options and save. The very next scroll
+      running, turn protection off in the desktop dashboard and save. The very next scroll
       produces no enforcement.
 
 ## Detection quality
@@ -49,11 +76,12 @@ extension ID, or a system-wide LaunchDaemon.
       appears → choose *Doomscrolling* → the popup shows a timer counting up
       toward `1 min session` while the feed is foregrounded → keep scrolling
       until the minute is spent → the next advance raises the wall → **Leave**
-      closes the feed. Then open Options and confirm four timeline rows, newest
-      first: leave pressed, wall shown, timer ended, session started.
+      closes the feed. Then inspect the local `activity` record in the
+      service-worker DevTools and confirm four timeline rows, newest first:
+      leave pressed, wall shown, timer ended, session started.
 - [ ] **A feed entry asks once, with one answer.** Open Instagram Reels
       directly. The prompt offers exactly *Doomscrolling — give me N minutes*,
-      quoting the Options budget, with no second button, no text box, and no
+      quoting the desktop dashboard budget, with no second button, no text box, and no
       duration picker. Reopening during the cooldown must not prompt again.
 - [ ] **The prompt cannot be dismissed into a free session.** Press Escape and
       click outside the dialog. It stays up, nothing is declared, and no
@@ -95,8 +123,8 @@ carry over — never reset, never bypassed.
       midnight and keep scrolling. The remaining budget must be what was left,
       not a fresh one — the daily usage counter resetting must change nothing.
 - [ ] **A raised wall stays raised.** After the wall appears, reload the
-      extension and return to the feed. Advancing must re-wall, and Options must
-      still show exactly one *Wall shown* row for that session.
+      extension and return to the feed. Advancing must re-wall, and the activity
+      log must still contain exactly one *Wall shown* row for that session.
 - [ ] **"Continue for 5 minutes" is not a way past a wall.** It suppresses the
       score-ladder pause only; the declared budget still walls.
 
@@ -133,15 +161,15 @@ carry over — never reset, never bypassed.
 
 - [ ] **Popup reports honestly.** Protection state, each site's rule state,
       and an active-session indicator that appears only during a live session.
-- [ ] **Options requires an explicit save.** Toggle a rule, close the page
-      without saving, reopen it — the change is gone.
-- [ ] **Validation blocks bad input.** Enter a session budget of `0`, warning
-      score `99`, grace `-1`, and an enabled rule with no interventions. Each shows an
-      inline error and nothing persists.
+- [ ] **Dashboard requires an explicit save.** Toggle a rule, close the
+      dashboard without saving, reopen it — the saved value is unchanged.
+- [ ] **Dashboard validation blocks bad input.** Enter a session budget of `0`,
+      warning score `99`, grace `-1`, and an enabled rule with no interventions.
+      Each shows an inline error and nothing persists.
 - [ ] **Feedback records.** Click Accurate and Inaccurate on review entries and
       confirm the choice survives a reload.
-- [ ] **Options says what will happen.** Enable a rule and read its summary line
-      back: it names the doomscroll budget in minutes and the intervention
+- [ ] **Dashboard says what will happen.** Enable a rule and read its summary
+      line back: it names the doomscroll budget in minutes and the intervention
       ladder in order, and changes live as the fields are edited.
 - [ ] **The timeline reads plainly.** Each row shows a local timestamp, the feed
       label, one of the four moments, and a sentence built from your settings —

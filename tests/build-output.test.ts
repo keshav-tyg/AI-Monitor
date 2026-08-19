@@ -36,3 +36,7 @@ it('ships a service worker bundle that never touches window', () => {
 it('ships the local offscreen document used by the classifier', () => {
   expect(existsSync('dist/src/offscreen/index.html')).toBe(true);
 });
+
+it('ships a read-only options bundle without the old Save settings label', () => {
+  expect(readFileSync('dist/src/options/index.html', 'utf8')).not.toContain('Save settings');
+});

@@ -22,13 +22,32 @@ Then load it into Chrome:
 3. Click **Load unpacked**.
 4. Select the `dist/` folder produced by `npm run build`.
 
-Open the extension's **Options** page and turn on protection. Every rule ships
-disabled — the extension enforces nothing until you ask it to.
+Focus Rules are configured in the Local Focus Coach desktop dashboard. The
+extension's **Options** page is read-only; its **Open Local Focus Coach**
+button opens that dashboard on this Mac.
 
 For the optional on-device behaviour check, use Chrome 138+ and enable
 `chrome://flags/#prompt-api-for-gemini-nano`. Chrome may download its local
 model once. If it is unavailable, the declared-intent budget still works; the
 model simply cannot veto a budget wall that looks deliberate.
+
+## Desktop-managed Focus Rules
+
+The Local Focus Coach macOS companion is the only editor for the master
+protection switch and all per-site rules. Its dashboard saves a complete,
+validated settings revision locally; Chrome receives that read-only revision
+through the local Native Messaging relay. A dashboard save reaches a connected
+Chrome extension on its next five-second sync heartbeat.
+
+On the first authenticated connection after upgrading, an existing browser
+settings record is imported only when the desktop database has no Focus Rules
+record. That one-time import becomes revision 1. If the desktop already has a
+record, it wins; a completed import cannot overwrite later dashboard edits.
+
+Chrome retains the newest valid desktop revision only as a last-known-good
+enforcement cache. If the companion is temporarily unavailable, cached rules
+continue to enforce and Chrome asks for the newest revision when it reconnects.
+The cache is never an editable browser settings surface.
 
 ## What it watches
 
@@ -49,7 +68,7 @@ The extension treats an explicit start as the primary control, not a hidden
 score. Entering a feed asks:
 
 - **Doomscrolling — give me N minutes** — grants the per-site doomscroll budget
-  you set in Options (five minutes by default). The popup then shows a live
+  you set in the desktop dashboard (five minutes by default). The popup then shows a live
   timer counting that budget up toward it.
 
 That is the only button. There is no "just looking" escape hatch and no free
@@ -128,9 +147,12 @@ Concretely, it **does not**:
 - watch any other application, browser tab, or website
 - sync anything: storage is `chrome.storage.local`, never `sync`
 
-What it **does** store locally, in six keys:
+What it **does** store locally in Chrome:
 
-- `settings` — your rules
+- `settings` — a retired browser-owned record, retained only for the one-time
+  desktop import
+- `desktop-settings-snapshot` — the newest valid desktop revision, used only
+  as the last-known-good enforcement cache
 - `usage` — minutes per feed for the current local day
 - `interventions` — up to 200 past interventions with their plain-language
   reasons, plus your accurate/inaccurate feedback
@@ -140,12 +162,13 @@ What it **does** store locally, in six keys:
 - `activity` — up to 200 timeline entries: session started, timer ended, wall
   shown, leave pressed
 
-Uninstalling the extension removes all of it.
+Uninstalling the extension removes these Chrome-local entries. The authoritative
+Focus Rules record remains separately in the local desktop companion database.
 
 ## Activity timeline
 
-The Options page shows a **Recent activity** list — the plain diary of a
-declared session, newest first:
+The extension records this plain local diary of a declared session, newest
+first:
 
 | Entry | When it is written |
 | --- | --- |
@@ -214,15 +237,17 @@ assuming you stopped scrolling.
 
 macOS Chrome only. This is a prototype: no mobile app, no account, no cloud
 sync, no usage reporting of any kind, and no support for feeds beyond the three
-listed above. The optional desktop companion is only for Strict Mode.
+listed above. The local desktop companion owns Focus Rules; Strict Mode is
+optional.
 
-## Optional Strict Mode companion
+## Local macOS companion and optional Strict Mode
 
-Strict Mode is an optional, local macOS companion for an active Chrome session.
-It is supported only with Google Chrome on macOS. The extension, its Native
-Messaging relay, and the companion service communicate only on this computer;
-session data and the installation secret are stored locally. There is no
-account, cloud service, remote control, or cross-device synchronization.
+The local macOS companion owns Focus Rules and optionally provides Strict Mode
+for an active Chrome session. It is supported only with Google Chrome on macOS.
+The extension, its Native Messaging relay, and the companion service
+communicate only on this computer; session data and the installation secret are
+stored locally. There is no account, cloud service, remote control, or
+cross-device synchronization.
 
 Strict Mode is deliberately **not tamper-proof**. A person who controls the
 Mac can disable software, alter or remove registrations, or otherwise bypass
