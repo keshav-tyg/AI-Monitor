@@ -195,6 +195,26 @@ final class NativeMessagingRelayTest {
     }
 
     @Test
+    void rejectsOversizedSyncBeforeWritingItToTheService() throws Exception {
+        var oversizedLegacySettings = objectMapper.createObjectNode()
+                .put("legacy", "x".repeat(64 * 1024));
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(2);
+        var relay = relay(() -> service);
+
+        assertEquals(
+                0,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        nativeInput(sync(4L, oversizedLegacySettings)),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        assertEquals(List.of("relay.connected", "relay.disconnected"), service.requestTypes());
+        assertEquals(List.of("service.ack", "relay.error"), nativeOutputTypes(chromeOutput));
+    }
+
+    @Test
     void openDashboardForwardsOnlyAnExactEmptyPayload() throws Exception {
         var chromeOutput = new ByteArrayOutputStream();
         var service = serviceWithResponses(3);
@@ -227,8 +247,7 @@ final class NativeMessagingRelayTest {
                 serviceResponse("service.ack", objectMapper.createObjectNode()),
                 serviceResponse(
                         "service.focusSettings",
-                        objectMapper.readTree(
-                                "{\"revision\":4,\"settings\":{},\"chromeAppliedRevision\":4}")),
+                        validFocusSettingsResponsePayload()),
                 serviceResponse("service.ack", objectMapper.createObjectNode()));
         var relay = relay(() -> service);
 
@@ -245,6 +264,51 @@ final class NativeMessagingRelayTest {
         var response = framing.read(output).orElseThrow();
         assertEquals("service.focusSettings", response.path("type").textValue());
         assertFalse(response.has("secret"));
+    }
+
+    @Test
+    void rejectsNonemptyServiceAcknowledgementsInsteadOfForwardingThem() throws Exception {
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(
+                serviceResponse("service.ack", objectMapper.readTree("{\"page\":\"content\"}")));
+        var relay = relay(() -> service);
+
+        assertEquals(
+                1,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        InputStream.nullInputStream(),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        assertEquals(List.of("relay.connected"), service.requestTypes());
+        assertEquals(List.of("relay.error"), nativeOutputTypes(chromeOutput));
+    }
+
+    @Test
+    void rejectsMalformedSettingsSnapshotsInsteadOfForwardingThem() throws Exception {
+        var chromeOutput = new ByteArrayOutputStream();
+        var service = serviceWithResponses(
+                serviceResponse("service.ack", objectMapper.createObjectNode()),
+                serviceResponse(
+                        "service.focusSettings",
+                        objectMapper.readTree(
+                                "{\"revision\":4,\"settings\":{},\"chromeAppliedRevision\":4}")),
+                serviceResponse("service.ack", objectMapper.createObjectNode()));
+        var relay = relay(() -> service);
+
+        assertEquals(
+                1,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        nativeInput(sync(4L)),
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        assertEquals(
+                List.of("relay.connected", "relay.focusSettings.sync", "relay.disconnected"),
+                service.requestTypes());
+        assertEquals(List.of("service.ack", "relay.error"), nativeOutputTypes(chromeOutput));
     }
 
     @Test
@@ -389,6 +453,24 @@ final class NativeMessagingRelayTest {
                 .put("secret", SECRET)
                 .put("type", type)
                 .set("payload", payload);
+    }
+
+    private JsonNode validFocusSettingsResponsePayload() throws IOException {
+        return objectMapper.readTree(
+                """
+                {
+                  "revision": 4,
+                  "settings": {
+                    "enabled": false,
+                    "rules": {
+                      "instagram-reels": {"enabled": false, "doomscrollBudgetMinutes": 5, "warningScore": 10, "gracePeriodSeconds": 60, "interventions": []},
+                      "x-timeline": {"enabled": false, "doomscrollBudgetMinutes": 5, "warningScore": 10, "gracePeriodSeconds": 60, "interventions": []},
+                      "youtube-shorts": {"enabled": false, "doomscrollBudgetMinutes": 5, "warningScore": 10, "gracePeriodSeconds": 60, "interventions": []}
+                    }
+                  },
+                  "chromeAppliedRevision": 4
+                }
+                """);
     }
 
     private Set<String> fieldNames(JsonNode object) {
