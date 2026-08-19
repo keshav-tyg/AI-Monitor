@@ -92,6 +92,20 @@ public final class ServiceClient implements AutoCloseable {
         });
     }
 
+    public void getFocusSettingsAsync(
+            BiConsumer<ProtocolMessage, RuntimeException> completion) {
+        requestAsync("dashboard.focusSettings.get", Map.of(), completion);
+    }
+
+    public void saveFocusSettingsAsync(
+            Map<String, Object> settings,
+            BiConsumer<ProtocolMessage, RuntimeException> completion) {
+        requestAsync(
+                "dashboard.focusSettings.save",
+                Map.of("settings", Objects.requireNonNull(settings)),
+                completion);
+    }
+
     @Override
     public void close() {
         requests.shutdownNow();

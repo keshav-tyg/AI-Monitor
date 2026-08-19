@@ -30,6 +30,47 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ServiceClientTest {
     @Test
+    void focusSettingsGetWrapperUsesTheExactAuthenticatedRequest() throws Exception {
+        var received = new AtomicReference<ProtocolMessage>();
+        var completed = new CountDownLatch(1);
+        var client = new ServiceClient("secret", request -> {
+            received.set(request);
+            return new ProtocolMessage(1, "secret", "service.focusSettings", Map.of());
+        });
+
+        FxTestSupport.call(() -> {
+            client.getFocusSettingsAsync((response, failure) -> completed.countDown());
+            return null;
+        });
+
+        assertTrue(completed.await(1, TimeUnit.SECONDS));
+        assertEquals("dashboard.focusSettings.get", received.get().type());
+        assertEquals(Map.of(), received.get().payload());
+        client.close();
+    }
+
+    @Test
+    void focusSettingsSaveWrapperNestsTheCompleteSettingsDocument() throws Exception {
+        var received = new AtomicReference<ProtocolMessage>();
+        var completed = new CountDownLatch(1);
+        var client = new ServiceClient("secret", request -> {
+            received.set(request);
+            return new ProtocolMessage(1, "secret", "service.focusSettings", Map.of());
+        });
+        var settings = Map.<String, Object>of("enabled", true, "rules", Map.of());
+
+        FxTestSupport.call(() -> {
+            client.saveFocusSettingsAsync(settings, (response, failure) -> completed.countDown());
+            return null;
+        });
+
+        assertTrue(completed.await(1, TimeUnit.SECONDS));
+        assertEquals("dashboard.focusSettings.save", received.get().type());
+        assertEquals(Map.of("settings", settings), received.get().payload());
+        client.close();
+    }
+
+    @Test
     void asynchronousRequestKeepsJavaFxResponsiveAndCompletesOnItsThread()
             throws Exception {
         var exchangeStarted = new CountDownLatch(1);
