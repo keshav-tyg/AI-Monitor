@@ -1,5 +1,5 @@
 {
-  "name": "com.localfocuscoach.strict_mode",
+  "name": "__NATIVE_HOST_NAME__",
   "description": "Local Focus Coach Strict Mode relay",
   "path": "__RELAY_EXECUTABLE__",
   "type": "stdio",

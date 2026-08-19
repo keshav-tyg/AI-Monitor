@@ -51,7 +51,10 @@ val generateServiceBootstrap by tasks.registering {
                     var repository = new SqliteStrictSessionRepository(
                             appSupport.resolve("strict-mode.sqlite3"));
                     var service = new StrictModeService(
-                            InstallSecret.loadOrCreateDefault(), repository, new MacChromeController());
+                            InstallSecret.loadOrCreateDefault(),
+                            repository,
+                            new MacChromeController(),
+                            new MacRestoreWarningNotifier());
                     var server = new UnixSocketServer(
                             UnixSocketServer.defaultSocketPath(),
                             new ProtocolCodec(),

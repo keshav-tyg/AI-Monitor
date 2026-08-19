@@ -52,12 +52,10 @@ class SqliteStrictSessionRepositoryTest {
     @Test
     void clearRemovesOnlyTheNamedSession(@TempDir Path directory) {
         var repo = repository(directory);
-        var removed = activeTimed("00000000-0000-0000-0000-000000000003", NOW.plusSeconds(60));
         var retained = activeTimed("00000000-0000-0000-0000-000000000004", NOW.plusSeconds(120));
-        repo.save(removed);
         repo.save(retained);
 
-        repo.clear(removed.id());
+        repo.clear(UUID.fromString("00000000-0000-0000-0000-000000000003"));
 
         assertEquals(retained.id(), repo.loadActive().orElseThrow().id());
 

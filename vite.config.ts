@@ -1,10 +1,24 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 import { crx } from '@crxjs/vite-plugin';
-import manifest from './manifest.config';
+import manifest, { productionIdentity } from './manifest.config';
+
+const releaseIdentity = productionIdentity(process.env);
+const releaseIdentityPlugin = releaseIdentity
+  ? {
+      name: 'local-focus-coach-production-identity',
+      generateBundle(this: { emitFile(file: { type: 'asset'; fileName: string; source: string }): void }) {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'production-extension-identity.json',
+          source: `${JSON.stringify(releaseIdentity, null, 2)}\n`,
+        });
+      },
+    }
+  : undefined;
 
 export default defineConfig({
-  plugins: [crx({ manifest })],
+  plugins: [crx({ manifest }), ...(releaseIdentityPlugin ? [releaseIdentityPlugin] : [])],
   build: {
     outDir: 'dist',
     emptyOutDir: true,

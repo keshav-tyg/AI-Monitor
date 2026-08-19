@@ -4,12 +4,12 @@ set -eu
 umask 077
 
 usage() {
-    echo "Usage: $0 --app-image <absolute-path> --extension-id <32-letter-id>" >&2
+    echo "Usage: $0 --app-image <absolute-path> (--production-identity-file <json> | --development-extension-id <32-letter-id>)" >&2
     exit 2
 }
 
 app_image_set=false
-extension_id_set=false
+identity_set=false
 while [ "$#" -gt 0 ]; do
     case $1 in
         --app-image)
@@ -19,11 +19,20 @@ while [ "$#" -gt 0 ]; do
             app_image_set=true
             shift 2
             ;;
-        --extension-id)
-            [ "$extension_id_set" = false ] || usage
+        --production-identity-file)
+            [ "$identity_set" = false ] || usage
+            [ "$#" -ge 2 ] || usage
+            production_identity_file=$2
+            identity_mode=production
+            identity_set=true
+            shift 2
+            ;;
+        --development-extension-id)
+            [ "$identity_set" = false ] || usage
             [ "$#" -ge 2 ] || usage
             extension_id=$2
-            extension_id_set=true
+            identity_mode=development
+            identity_set=true
             shift 2
             ;;
         *)
@@ -33,7 +42,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ "$app_image_set" = true ] || usage
-[ "$extension_id_set" = true ] || usage
+[ "$identity_set" = true ] || usage
 case $app_image in
     /*) ;;
     *)
@@ -43,6 +52,24 @@ case $app_image in
 esac
 
 installer_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ "$identity_mode" = production ]; then
+    if [ ! -f "$production_identity_file" ] || [ -L "$production_identity_file" ]; then
+        echo "Production identity metadata must be a regular file" >&2
+        exit 2
+    fi
+    if ! identity_version=$(plutil -extract version raw -o - "$production_identity_file" 2>/dev/null) \
+        || ! identity_channel=$(plutil -extract channel raw -o - "$production_identity_file" 2>/dev/null) \
+        || ! extension_id=$(plutil -extract extensionId raw -o - "$production_identity_file" 2>/dev/null) \
+        || ! native_host_name=$(plutil -extract nativeHostName raw -o - "$production_identity_file" 2>/dev/null) \
+        || [ "$identity_version" != 1 ] \
+        || [ "$identity_channel" != production ] \
+        || [ "$native_host_name" != com.localfocuscoach.strict_mode ]; then
+        echo "Production identity metadata is invalid or names a non-production host" >&2
+        exit 2
+    fi
+else
+    native_host_name=com.localfocuscoach.strict_mode_dev
+fi
 "$installer_directory/validate-extension-id.sh" "$extension_id"
 
 if [ ! -d "$app_image" ]; then
@@ -63,7 +90,7 @@ native_hosts_directory="$HOME/Library/Application Support/Google/Chrome/NativeMe
 app_support_directory="$HOME/Library/Application Support/Local Focus Coach"
 logs_directory="$app_support_directory/logs"
 plist="$launch_agents_directory/com.localfocuscoach.strict-service.plist"
-manifest="$native_hosts_directory/com.localfocuscoach.strict_mode.json"
+manifest="$native_hosts_directory/$native_host_name.json"
 receipt="$app_support_directory/.installer-registration-receipt"
 
 file_hash() {
@@ -146,6 +173,7 @@ sed_replacement() {
 relay_json=$(json_string "$relay_executable" | sed_replacement)
 origin_json=$(json_string "chrome-extension://$extension_id/" | sed_replacement)
 sed \
+    -e "s|__NATIVE_HOST_NAME__|$native_host_name|" \
     -e "s|\"__RELAY_EXECUTABLE__\"|$relay_json|" \
     -e "s|\"__ALLOWED_ORIGIN__\"|$origin_json|" \
     "$installer_directory/com.localfocuscoach.strict_mode.json.template" \
@@ -156,6 +184,7 @@ plist_hash=$(file_hash "$temporary_plist")
 manifest_hash=$(file_hash "$temporary_manifest")
 printf '%s\n' \
     'version=1' \
+    "native_host_name=$native_host_name" \
     "plist_sha256=$plist_hash" \
     "manifest_sha256=$manifest_hash" \
     >"$temporary_receipt"

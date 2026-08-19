@@ -166,6 +166,50 @@ final class NativeMessagingRelayTest {
                 NativeMessagingRelay.readInstalledOrigin(manifest, objectMapper));
     }
 
+    @Test
+    void callerOriginSelectsOnlyItsSeparateDevelopmentHostConfiguration(@TempDir Path directory)
+            throws Exception {
+        var developmentOrigin = "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/";
+        Files.writeString(
+                directory.resolve("com.localfocuscoach.strict_mode.json"),
+                "{\"name\":\"com.localfocuscoach.strict_mode\",\"allowed_origins\":[\""
+                        + EXPECTED_ORIGIN
+                        + "\"]}",
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                directory.resolve("com.localfocuscoach.strict_mode_dev.json"),
+                "{\"name\":\"com.localfocuscoach.strict_mode_dev\",\"allowed_origins\":[\""
+                        + developmentOrigin
+                        + "\"]}",
+                StandardCharsets.UTF_8);
+
+        assertEquals(
+                developmentOrigin,
+                NativeMessagingRelay.readInstalledOriginForCaller(
+                        directory, developmentOrigin, objectMapper));
+    }
+
+    @Test
+    void duplicateProductionAndDevelopmentAllowlistsAreRejected(@TempDir Path directory)
+            throws Exception {
+        for (var hostName : List.of(
+                "com.localfocuscoach.strict_mode", "com.localfocuscoach.strict_mode_dev")) {
+            Files.writeString(
+                    directory.resolve(hostName + ".json"),
+                    "{\"name\":\""
+                            + hostName
+                            + "\",\"allowed_origins\":[\""
+                            + EXPECTED_ORIGIN
+                            + "\"]}",
+                    StandardCharsets.UTF_8);
+        }
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IOException.class,
+                () -> NativeMessagingRelay.readInstalledOriginForCaller(
+                        directory, EXPECTED_ORIGIN, objectMapper));
+    }
+
     private NativeMessagingRelay relay(
             NativeMessagingRelay.ServiceConnectionFactory connectionFactory) {
         return new NativeMessagingRelay(

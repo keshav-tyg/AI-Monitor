@@ -21,13 +21,23 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it('connects to the strict host once and sends hello first', () => {
+it('connects a development build only to the development strict host', () => {
   startNativeBridge();
   startNativeBridge();
 
   expect(spies.connectNative).toHaveBeenCalledTimes(1);
-  expect(spies.connectNative).toHaveBeenCalledWith('com.localfocuscoach.strict_mode');
+  expect(spies.connectNative).toHaveBeenCalledWith('com.localfocuscoach.strict_mode_dev');
   expect(spies.nativePorts[0]?.postMessage).toHaveBeenCalledExactlyOnceWith(HELLO);
+});
+
+it('connects a keyed production build only to the production strict host', () => {
+  spies.getManifest.mockReturnValue({ key: 'release-public-key' });
+
+  startNativeBridge();
+
+  expect(spies.connectNative).toHaveBeenCalledExactlyOnceWith(
+    'com.localfocuscoach.strict_mode',
+  );
 });
 
 it('sends only the bounded heartbeat envelope every five seconds', () => {

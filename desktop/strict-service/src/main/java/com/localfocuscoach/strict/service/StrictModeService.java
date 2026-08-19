@@ -41,9 +41,11 @@ public final class StrictModeService implements AutoCloseable {
     private final TypingChallengeService challengeService = new TypingChallengeService();
     private final Clock clock;
     private final ScheduledExecutorService scheduler;
+    private final RestoreWarningNotifier restoreWarningNotifier;
     private ConnectionHealth connectionHealth = ConnectionHealth.DISCONNECTED;
     private TypingChallenge activeChallenge;
     private Instant lastQuitWarningDeadline;
+    private Instant notifiedWarningDeadline;
     private ScheduledFuture<?> scheduledCheck;
     private boolean chromeStateUncertain;
     private boolean closed;
@@ -59,7 +61,26 @@ public final class StrictModeService implements AutoCloseable {
                     var thread = new Thread(runnable, "strict-mode-deadline");
                     thread.setDaemon(true);
                     return thread;
-                }));
+                }),
+                RestoreWarningNotifier.NOOP);
+    }
+
+    public StrictModeService(
+            String secret,
+            StrictSessionRepository repository,
+            ChromeController chromeController,
+            RestoreWarningNotifier restoreWarningNotifier) {
+        this(
+                secret,
+                repository,
+                chromeController,
+                Clock.systemUTC(),
+                Executors.newSingleThreadScheduledExecutor(runnable -> {
+                    var thread = new Thread(runnable, "strict-mode-deadline");
+                    thread.setDaemon(true);
+                    return thread;
+                }),
+                restoreWarningNotifier);
     }
 
     StrictModeService(
@@ -68,6 +89,22 @@ public final class StrictModeService implements AutoCloseable {
             ChromeController chromeController,
             Clock clock,
             ScheduledExecutorService scheduler) {
+        this(
+                secret,
+                repository,
+                chromeController,
+                clock,
+                scheduler,
+                RestoreWarningNotifier.NOOP);
+    }
+
+    StrictModeService(
+            String secret,
+            StrictSessionRepository repository,
+            ChromeController chromeController,
+            Clock clock,
+            ScheduledExecutorService scheduler,
+            RestoreWarningNotifier restoreWarningNotifier) {
         if (secret == null || secret.isBlank()) {
             throw new IllegalArgumentException("Install secret must not be blank");
         }
@@ -76,6 +113,7 @@ public final class StrictModeService implements AutoCloseable {
         this.chromeController = Objects.requireNonNull(chromeController);
         this.clock = Objects.requireNonNull(clock);
         this.scheduler = Objects.requireNonNull(scheduler);
+        this.restoreWarningNotifier = Objects.requireNonNull(restoreWarningNotifier);
         var recovered = repository.loadActive().orElse(null);
         if (recovered != null) {
             advancePersistAndAct(recovered, clock.instant());
@@ -214,6 +252,7 @@ public final class StrictModeService implements AutoCloseable {
         repository.clear(active.orElseThrow().id());
         activeChallenge = null;
         lastQuitWarningDeadline = null;
+        clearRestoreWarning();
         updateSchedule(null);
         return authenticatedResponse("service.unlockResult", Map.of("unlocked", true));
     }
@@ -265,12 +304,41 @@ public final class StrictModeService implements AutoCloseable {
     }
 
     private void performAction(StrictSession session, StrictAction action) {
+        syncRestoreWarning(session.warningEndsAt());
         if (action == StrictAction.SHOW_RESTORE_WARNING) {
             lastQuitWarningDeadline = null;
         } else if (action == StrictAction.QUIT_CHROME
                 && !Objects.equals(lastQuitWarningDeadline, session.warningEndsAt())) {
             lastQuitWarningDeadline = session.warningEndsAt();
             requestGracefulQuit();
+        }
+    }
+
+    private void syncRestoreWarning(Instant deadline) {
+        if (Objects.equals(notifiedWarningDeadline, deadline)) {
+            return;
+        }
+        if (deadline == null) {
+            clearRestoreWarning();
+            return;
+        }
+        try {
+            restoreWarningNotifier.show(deadline);
+            notifiedWarningDeadline = deadline;
+        } catch (RuntimeException exception) {
+            // Warning delivery failure must not stop the service or skip later retries.
+        }
+    }
+
+    private void clearRestoreWarning() {
+        if (notifiedWarningDeadline == null) {
+            return;
+        }
+        try {
+            restoreWarningNotifier.clear();
+            notifiedWarningDeadline = null;
+        } catch (RuntimeException exception) {
+            // Retain the deadline so a later state transition can retry cleanup.
         }
     }
 
@@ -319,7 +387,8 @@ public final class StrictModeService implements AutoCloseable {
                 && session.status() == SessionStatus.ACTIVE
                 && (session.warningEndsAt() != null
                         || (session.mode() == StrictMode.TIMED && session.endsAt() != null)
-                        || chromeStateUncertain);
+                        || chromeStateUncertain
+                        || connectionHealth == ConnectionHealth.DISCONNECTED);
         if (needsCheck
                 && (scheduledCheck == null
                         || scheduledCheck.isCancelled()
@@ -371,6 +440,12 @@ public final class StrictModeService implements AutoCloseable {
         if (scheduledCheck != null) {
             scheduledCheck.cancel(false);
             scheduledCheck = null;
+        }
+        clearRestoreWarning();
+        try {
+            restoreWarningNotifier.close();
+        } catch (RuntimeException exception) {
+            // Shutdown remains best effort and never escalates enforcement.
         }
         scheduler.shutdownNow();
     }

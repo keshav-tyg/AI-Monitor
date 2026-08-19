@@ -1,6 +1,7 @@
 import { extensionNativeMessage } from '../shared/native-protocol';
 
-const NATIVE_HOST_NAME = 'com.localfocuscoach.strict_mode';
+const PRODUCTION_NATIVE_HOST_NAME = 'com.localfocuscoach.strict_mode';
+const DEVELOPMENT_NATIVE_HOST_NAME = 'com.localfocuscoach.strict_mode_dev';
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
 
@@ -77,7 +78,11 @@ function connect(): void {
 
   state = 'CONNECTING';
   try {
-    const port = runtime.connectNative(NATIVE_HOST_NAME);
+    const manifest = runtime.getManifest();
+    const hostName = typeof manifest.key === 'string' && manifest.key.length > 0
+      ? PRODUCTION_NATIVE_HOST_NAME
+      : DEVELOPMENT_NATIVE_HOST_NAME;
+    const port = runtime.connectNative(hostName);
     const disconnectListener = (): void => handleDisconnect(port);
     activePort = port;
     activeDisconnectListener = disconnectListener;
