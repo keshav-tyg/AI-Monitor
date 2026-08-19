@@ -52,6 +52,25 @@ dependencies, and a private Java 21 runtime with the desktop modules. The image
 is a local, ad-hoc-signed development build; it is not Developer ID signed or
 notarized, and this version does not provide automatic updates.
 
+## Focus Rules ownership and Chrome sync
+
+The desktop dashboard is the only place to edit Focus Rules: the master
+protection switch and every site rule. Chrome's Options page has no editable
+settings; **Open Local Focus Coach** asks the installed companion to open the
+dashboard.
+
+The first authenticated extension connection imports an old browser settings
+record only when the desktop database has no Focus Rules record. That import is
+recorded as revision 1 and cannot replace later dashboard edits. When a desktop
+record already exists, it replaces the extension cache instead.
+
+After a dashboard save, a connected extension receives the new revision on its
+next five-second native sync heartbeat. The extension validates and keeps that
+revision as a last-known-good enforcement cache, so a temporary companion
+disconnect does not disable already cached rules. The dashboard reports
+**Synced with Chrome** only after Chrome acknowledges the current revision;
+otherwise it reports **Waiting for Chrome**.
+
 ## Register the per-user companion
 
 Build or copy the app image to its permanent location before registering it.
@@ -80,6 +99,10 @@ with the explicitly separate development host:
   --app-image "$PWD/build/jpackage/Local Focus Coach.app" \
   --development-extension-id abcdefghijklmnopabcdefghijklmnop
 ```
+
+When loading that development extension, select the repository's generated
+`dist/` directory in Chrome's **Load unpacked** picker, not the repository
+root. Rebuild it with `npm run build` before loading a new development bundle.
 
 The installer requires no administrator access. It creates only a user
 LaunchAgent at
