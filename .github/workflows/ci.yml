@@ -1,0 +1,45 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  extension:
+    name: Chrome extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  desktop:
+    name: macOS companion
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Test and package
+        working-directory: desktop
+        run: ./gradlew test jpackage --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-focus-coach-macos-app
+          path: desktop/build/jpackage/Local Focus Coach.app
+          if-no-files-found: error
+          retention-days: 7
