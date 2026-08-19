@@ -6,7 +6,6 @@ launch_agents_directory="$HOME/Library/LaunchAgents"
 native_hosts_directory="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 app_support_directory="$HOME/Library/Application Support/Local Focus Coach"
 plist="$launch_agents_directory/com.localfocuscoach.strict-service.plist"
-manifest="$native_hosts_directory/com.localfocuscoach.strict_mode.json"
 receipt="$app_support_directory/.installer-registration-receipt"
 
 if [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; then
@@ -36,6 +35,15 @@ valid_hash() {
 
 plist_hash=$(receipt_value plist_sha256)
 manifest_hash=$(receipt_value manifest_sha256)
+native_host_name=$(receipt_value native_host_name)
+case $native_host_name in
+    com.localfocuscoach.strict_mode|com.localfocuscoach.strict_mode_dev) ;;
+    *)
+        echo "Refusing to use a malformed installer receipt: $receipt" >&2
+        exit 1
+        ;;
+esac
+manifest="$native_hosts_directory/$native_host_name.json"
 if ! valid_hash "$plist_hash" || ! valid_hash "$manifest_hash"; then
     echo "Refusing to use a malformed installer receipt: $receipt" >&2
     exit 1

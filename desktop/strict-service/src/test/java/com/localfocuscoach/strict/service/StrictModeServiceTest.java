@@ -67,6 +67,61 @@ class StrictModeServiceTest {
     }
 
     @Test
+    void disconnectedRelayShowsAServiceOwnedRestoreWarning(@TempDir Path directory) {
+        var repository = repository(directory);
+        var notifier = new RecordingRestoreWarningNotifier();
+        service = new StrictModeService(
+                SECRET,
+                repository,
+                new FakeChromeController(true),
+                Clock.fixed(NOW, ZoneId.of("UTC")),
+                new CapturingScheduler(),
+                notifier);
+
+        service.handle(startMessage(SECRET), NOW);
+
+        assertEquals(1, notifier.showCount);
+        assertEquals(NOW.plusSeconds(30), notifier.lastDeadline);
+    }
+
+    @Test
+    void relayReconnectClearsTheServiceOwnedRestoreWarning(@TempDir Path directory) {
+        var repository = repository(directory);
+        var notifier = new RecordingRestoreWarningNotifier();
+        service = new StrictModeService(
+                SECRET,
+                repository,
+                new FakeChromeController(true),
+                Clock.fixed(NOW, ZoneId.of("UTC")),
+                new CapturingScheduler(),
+                notifier);
+        service.handle(startMessage(SECRET), NOW);
+
+        service.handle(message(SECRET, "relay.connected"), NOW.plusSeconds(10));
+
+        assertEquals(1, notifier.clearCount);
+    }
+
+    @Test
+    void closingChromeClearsTheServiceOwnedRestoreWarning(@TempDir Path directory) {
+        var repository = repository(directory);
+        var notifier = new RecordingRestoreWarningNotifier();
+        var chrome = new MutableChromeController();
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(
+                SECRET, repository, chrome, clock, scheduler, notifier);
+        service.handle(startMessage(SECRET), NOW);
+
+        chrome.running = false;
+        clock.advance(Duration.ofSeconds(1));
+        scheduler.runScheduledCheck();
+
+        assertEquals(1, notifier.clearCount);
+        assertNull(repository.loadActive().orElseThrow().warningEndsAt());
+    }
+
+    @Test
     void rejectsUnknownProtocolVersionWithoutChangingSession(@TempDir Path directory) {
         var repository = repository(directory);
         service = new StrictModeService(SECRET, repository, new FakeChromeController(true));
@@ -138,6 +193,29 @@ class StrictModeServiceTest {
         service.handle(message(SECRET, "relay.disconnected"), NOW.plusSeconds(1));
 
         assertNull(repository.loadActive().orElseThrow().warningEndsAt());
+    }
+
+    @Test
+    void closedChromeReopeningWithoutTheRelayStartsAFreshWarning(@TempDir Path directory) {
+        var repository = repository(directory);
+        var chrome = new MutableChromeController();
+        chrome.running = false;
+        var clock = new MutableClock(NOW);
+        var scheduler = new CapturingScheduler();
+        service = new StrictModeService(SECRET, repository, chrome, clock, scheduler);
+        service.handle(
+                new ProtocolMessage(
+                        1,
+                        SECRET,
+                        "dashboard.start",
+                        Map.of("mode", "INDEFINITE", "earlyExitChallenge", true)),
+                NOW);
+
+        chrome.running = true;
+        clock.advance(Duration.ofSeconds(1));
+        scheduler.runScheduledCheck();
+
+        assertEquals(NOW.plusSeconds(31), repository.loadActive().orElseThrow().warningEndsAt());
     }
 
     @Test
@@ -458,6 +536,24 @@ class StrictModeServiceTest {
                 throw new IllegalStateException("quit unavailable");
             }
             return quitResult;
+        }
+    }
+
+    private static final class RecordingRestoreWarningNotifier
+            implements RestoreWarningNotifier {
+        private int showCount;
+        private int clearCount;
+        private Instant lastDeadline;
+
+        @Override
+        public void show(Instant deadline) {
+            showCount++;
+            lastDeadline = deadline;
+        }
+
+        @Override
+        public void clear() {
+            clearCount++;
         }
     }
 

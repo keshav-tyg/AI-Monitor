@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -31,6 +32,8 @@ public final class NativeMessagingRelay {
     private static final Set<String> EXTENSION_FIELDS = Set.of("version", "type", "payload");
     private static final Set<String> SERVICE_FIELDS =
             Set.of("version", "secret", "type", "payload");
+    private static final List<String> NATIVE_HOST_NAMES = List.of(
+            "com.localfocuscoach.strict_mode", "com.localfocuscoach.strict_mode_dev");
 
     private final String expectedOrigin;
     private final String secret;
@@ -212,14 +215,17 @@ public final class NativeMessagingRelay {
     }
 
     public static Path defaultHostManifestPath() {
+        return defaultNativeHostsDirectory().resolve("com.localfocuscoach.strict_mode.json");
+    }
+
+    public static Path defaultNativeHostsDirectory() {
         return Path.of(
                 System.getProperty("user.home"),
                 "Library",
                 "Application Support",
                 "Google",
                 "Chrome",
-                "NativeMessagingHosts",
-                "com.localfocuscoach.strict_mode.json");
+                "NativeMessagingHosts");
     }
 
     public static String readInstalledOrigin(Path manifestPath, ObjectMapper objectMapper)
@@ -239,6 +245,40 @@ public final class NativeMessagingRelay {
         return origin;
     }
 
+    public static String readInstalledOriginForCaller(
+            Path nativeHostsDirectory, String callerOrigin, ObjectMapper objectMapper)
+            throws IOException {
+        if (callerOrigin == null || !EXTENSION_ORIGIN.matcher(callerOrigin).matches()) {
+            throw new IOException("Chrome provided an invalid extension origin");
+        }
+        String matchedOrigin = null;
+        for (var hostName : NATIVE_HOST_NAMES) {
+            var manifestPath = nativeHostsDirectory.resolve(hostName + ".json");
+            if (!Files.isRegularFile(manifestPath)) {
+                continue;
+            }
+            var manifest = objectMapper.readTree(Files.readAllBytes(manifestPath));
+            if (manifest == null
+                    || !manifest.isObject()
+                    || !manifest.path("name").isTextual()
+                    || !hostName.equals(manifest.path("name").textValue())) {
+                throw new IOException("Native host manifest name does not match its configuration");
+            }
+            var installedOrigin = readInstalledOrigin(manifestPath, objectMapper);
+            if (callerOrigin.equals(installedOrigin)) {
+                if (matchedOrigin != null) {
+                    throw new IOException(
+                            "Production and development native hosts share an allowed origin");
+                }
+                matchedOrigin = installedOrigin;
+            }
+        }
+        if (matchedOrigin == null) {
+            throw new IOException("No native host configuration allows the caller origin");
+        }
+        return matchedOrigin;
+    }
+
     public static void main(String[] args) {
         var objectMapper = new ObjectMapper();
         var framing = new NativeMessageFraming(objectMapper);
@@ -250,7 +290,8 @@ public final class NativeMessagingRelay {
         }
         try {
             var relay = new NativeMessagingRelay(
-                    readInstalledOrigin(defaultHostManifestPath(), objectMapper),
+                    readInstalledOriginForCaller(
+                            defaultNativeHostsDirectory(), args[0], objectMapper),
                     InstallSecret.loadOrCreateDefault(),
                     framing,
                     objectMapper,

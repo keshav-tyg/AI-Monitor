@@ -25,15 +25,18 @@ Do not perform this procedure against a production Chrome profile unless the
 tester accepts the session and graceful-quit effects. Close or save unrelated
 Chrome work first.
 
-1. From the repository root, build the extension:
+1. From the repository root, build the production extension with the release
+   public key as documented in the root README:
 
    ```sh
-   npm run build
+   LFC_EXTENSION_PUBLIC_KEY='<base64 DER SubjectPublicKeyInfo>' \
+     npm run build:production
    ```
 
-2. Open `chrome://extensions`, enable Developer mode, load `dist/`, and copy
-   the extension's stable 32-letter ID. Keep this extension loaded; the Native
-   Messaging registration allows exactly this ID.
+2. Open `chrome://extensions`, enable Developer mode, load `dist/`, and confirm
+   Chrome's extension ID matches `dist/production-extension-identity.json`.
+   A plain unpacked development build is not expected to keep the same ID
+   across machines and must use the separate `_dev` host configuration.
 3. From `desktop/`, package the app image with Java 21:
 
    ```sh
@@ -43,13 +46,12 @@ Chrome work first.
 
 4. Copy `build/jpackage/Local Focus Coach.app` to its permanent absolute path.
    Do not move the app image after registration.
-5. Register the companion, substituting the actual absolute app path and
-   copied extension ID:
+5. Register the companion with the build-generated production identity:
 
    ```sh
    ./installer/install-local-focus-coach.sh \
      --app-image "/absolute/path/Local Focus Coach.app" \
-     --extension-id abcdefghijklmnopabcdefghijklmnop
+     --production-identity-file ../dist/production-extension-identity.json
    ```
 
    This creates only the user LaunchAgent and the Chrome user Native Messaging
@@ -77,6 +79,11 @@ enough to observe the status update.
       dashboard window, wait briefly, relaunch the dashboard, and confirm the
       session is still active with its remaining state. The dashboard is a
       client; closing it must not stop the background session.
+- [ ] **Dashboard-closed disconnect is still visible.** Keep that session active
+      with the dashboard closed, then disable the extension while Chrome is
+      running. Confirm the service presents the local macOS restore dialog.
+      Re-enable the extension before expiry and confirm the dialog is cancelled
+      and Chrome remains open.
 - [ ] **Timed mode expires automatically.** Start a timed session without
       early-exit challenge, let the countdown reach zero, and confirm it ends
       without an unlock challenge.
@@ -115,6 +122,21 @@ enough to observe the status update.
 - [ ] **Closed Chrome does not warn.** With an active session, quit Chrome
       yourself while the extension connection is healthy. Confirm no restoration
       warning starts solely because Chrome is closed.
+- [ ] **Chrome reopen starts a fresh cycle.** Keep the session active after the
+      prior closed-Chrome case, prevent the extension relay from reconnecting,
+      and reopen Chrome. Confirm a new 30-second local warning appears.
+- [ ] **MV3 worker restart reconnects.** With the development host available,
+      stop the extension service worker from `chrome://extensions`, then trigger
+      or inspect the extension so Chrome starts a new worker. Confirm it opens a
+      fresh native port and the active session returns to healthy without a
+      duplicate warning or heartbeat loop.
+- [ ] **Unavailable or synchronously failing native host recovers.** In a
+      development profile, temporarily move the `_dev` Native Messaging manifest
+      aside and restart the worker. Confirm an immediate `connectNative` failure
+      does not crash the worker and retries remain bounded. Restore the manifest
+      and confirm a later retry reconnects. Repeat with a deliberately invalid
+      development host executable path to cover Chrome's synchronous startup
+      failure, then restore the valid registration.
 - [ ] **Service restart restores a session.** Start a session and note its
       status. Restart the user LaunchAgent as in the first check, reopen or
       refresh the dashboard, and confirm the active session is restored. For a
@@ -139,11 +161,13 @@ enough to observe the status update.
 | macOS and Chrome version; extension ID | | |
 | LaunchAgent service start/restart | | |
 | Dashboard close/relaunch session persistence | | |
+| Dashboard-closed macOS warning/cancellation | | |
 | Timed and indefinite exit rules | | |
 | Challenge input and generic failure behavior | | |
 | Disconnect warning duration (seconds) | | |
 | Reconnect cancellation | | |
 | Chrome graceful-quit result at warning expiry | | |
 | Closed Chrome behavior | | |
+| Chrome reopen warning; MV3 restart/host recovery | | |
 | Session after service restart | | |
 | Ownership-safe uninstall | | |

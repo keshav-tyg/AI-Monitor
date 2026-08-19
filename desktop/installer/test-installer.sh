@@ -79,21 +79,25 @@ expect_equal() {
 
 expect_status 2 run_with_test_home "$install_script" \
     --app-image "relative.app" \
-    --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    --development-extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 expect_equal "" "$(cat "$launchctl_log")" "Invalid input must not call launchctl"
 expect_status 2 run_with_test_home "$install_script" \
     --app-image "$app_image" \
-    --extension-id qaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    --development-extension-id qaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 expect_equal "" "$(cat "$launchctl_log")" "Invalid extension ID must not call launchctl"
+expect_status 2 run_with_test_home "$install_script" \
+    --app-image "$app_image" \
+    --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+expect_equal "" "$(cat "$launchctl_log")" "Legacy ambiguous identity input must not call launchctl"
 
 extension_id=abcdefghijklmnopabcdefghijklmnop
 touch "$fail_next_bootstrap"
 expect_status 1 run_with_test_home "$install_script" \
     --app-image "$app_image" \
-    --extension-id "$extension_id"
+    --development-extension-id "$extension_id"
 
 plist="$test_home/Library/LaunchAgents/com.localfocuscoach.strict-service.plist"
-manifest="$test_home/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode.json"
+manifest="$test_home/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode_dev.json"
 receipt="$test_home/Library/Application Support/Local Focus Coach/.installer-registration-receipt"
 test ! -e "$plist"
 test ! -e "$manifest"
@@ -101,7 +105,7 @@ test ! -e "$receipt"
 
 run_with_test_home "$install_script" \
     --app-image "$app_image" \
-    --extension-id "$extension_id"
+    --development-extension-id "$extension_id"
 
 test -f "$plist"
 test -f "$manifest"
@@ -121,7 +125,7 @@ expect_equal "true" \
 expect_equal "true" \
     "$(plutil -extract KeepAlive raw -o - "$plist")" \
     "LaunchAgent KeepAlive"
-expect_equal "com.localfocuscoach.strict_mode" \
+expect_equal "com.localfocuscoach.strict_mode_dev" \
     "$(node -e 'const value = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(value.name)' "$manifest")" \
     "Native host name"
 expect_equal "$canonical_app_image/Contents/MacOS/Local Focus Coach Relay" \
@@ -145,7 +149,7 @@ old_receipt_hash=$(shasum -a 256 "$receipt" | awk '{print $1}')
 touch "$fail_next_bootstrap"
 expect_status 1 run_with_test_home "$install_script" \
     --app-image "$app_image" \
-    --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    --development-extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 expect_equal "$old_plist_hash" \
     "$(shasum -a 256 "$plist" | awk '{print $1}')" \
     "Failed reinstall must restore the previous LaunchAgent"
@@ -177,7 +181,7 @@ expect_equal "bootout gui/$user_id $plist" \
 
 run_with_test_home "$install_script" \
     --app-image "$app_image" \
-    --extension-id "$extension_id"
+    --development-extension-id "$extension_id"
 printf '%s\n' '{"name":"foreign.registration"}' >"$manifest"
 run_with_test_home "$uninstall_script"
 test ! -e "$plist"
@@ -189,7 +193,7 @@ expect_equal '{"name":"foreign.registration"}' \
 launchctl_calls=$(wc -l <"$launchctl_log" | tr -d ' ')
 expect_status 1 run_with_test_home "$install_script" \
     --app-image "$app_image" \
-    --extension-id "$extension_id"
+    --development-extension-id "$extension_id"
 expect_equal "$launchctl_calls" \
     "$(wc -l <"$launchctl_log" | tr -d ' ')" \
     "Refusing a foreign registration must not call launchctl"
@@ -198,5 +202,31 @@ expect_equal '{"name":"foreign.registration"}' \
     "Installer must not overwrite a foreign registration"
 run_with_test_home "$uninstall_script"
 test -e "$manifest"
+
+rm -f "$manifest"
+production_identity="$test_root/production-extension-identity.json"
+printf '%s\n' \
+    "{\"version\":1,\"channel\":\"production\",\"extensionId\":\"$extension_id\",\"nativeHostName\":\"com.localfocuscoach.strict_mode\"}" \
+    >"$production_identity"
+run_with_test_home "$install_script" \
+    --app-image "$app_image" \
+    --production-identity-file "$production_identity"
+production_manifest="$test_home/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode.json"
+test -f "$production_manifest"
+expect_equal "com.localfocuscoach.strict_mode" \
+    "$(node -e 'const value = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(value.name)' "$production_manifest")" \
+    "Production native host name"
+expect_equal "[\"chrome-extension://$extension_id/\"]" \
+    "$(node -e 'const value = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(JSON.stringify(value.allowed_origins))' "$production_manifest")" \
+    "Production native host allowed origin"
+run_with_test_home "$uninstall_script"
+test ! -e "$production_manifest"
+
+printf '%s\n' \
+    "{\"version\":1,\"channel\":\"production\",\"extensionId\":\"$extension_id\",\"nativeHostName\":\"com.localfocuscoach.strict_mode_dev\"}" \
+    >"$production_identity"
+expect_status 2 run_with_test_home "$install_script" \
+    --app-image "$app_image" \
+    --production-identity-file "$production_identity"
 
 echo "Installer tests passed"

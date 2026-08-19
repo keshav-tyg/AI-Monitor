@@ -232,14 +232,26 @@ setup.
 
 ### Install in this order
 
-Do these steps in order. The installer needs the stable ID of the already
-loaded extension, and it records the final app-image path in the per-user
-registrations.
+Do these steps in order. A release build needs the base64 DER public key that
+belongs to the production extension identity. Keep the corresponding private
+key in protected release infrastructure; do not put it in this repository or
+pass it to these build scripts. The public key is the remaining release input
+and is safe to embed in the extension manifest.
 
-1. Build the extension with `npm run build`.
-2. Load the resulting `dist/` folder in `chrome://extensions` and copy its
-   stable 32-letter extension ID. Keep that same loaded extension for the
-   companion registration.
+1. Build the production extension. The build validates the public key, embeds
+   it as the manifest `key`, derives the stable 32-letter Chrome ID, and writes
+   `dist/production-extension-identity.json`:
+
+   ```sh
+   LFC_EXTENSION_PUBLIC_KEY='<base64 DER SubjectPublicKeyInfo>' \
+     npm run build:production
+   ```
+
+   A plain `npm run build` is deliberately a development build. It has no
+   manifest key, its unpacked ID is not promised to be stable across machines,
+   and it connects only to `com.localfocuscoach.strict_mode_dev`.
+2. Load `dist/` in `chrome://extensions`. For a release, confirm Chrome shows
+   the ID recorded in `dist/production-extension-identity.json`.
 3. Package the macOS app image from `desktop/` with Java 21:
 
    ```sh
@@ -255,7 +267,7 @@ registrations.
    cd desktop
    ./installer/install-local-focus-coach.sh \
      --app-image "/absolute/path/Local Focus Coach.app" \
-     --extension-id abcdefghijklmnopabcdefghijklmnop
+     --production-identity-file ../dist/production-extension-identity.json
    ```
 
    This needs no administrator access. It installs only
@@ -263,14 +275,20 @@ registrations.
    `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode.json`.
    The LaunchAgent starts the local service at login and restarts it after an
    unexpected exit.
+   For local development, use
+   `--development-extension-id <copied-unpacked-id>` instead. That writes only
+   the `_dev` host configuration; a raw development ID cannot enter the
+   production allowlist.
 6. Launch the dashboard from the app image, confirm that it can see the local
    service, then enable Strict Mode from the dashboard.
 
 When an active session loses its extension connection while Google Chrome is
-running, the dashboard gives a 30-second restoration warning. Re-enable the
-extension before that deadline to cancel the warning. If it expires, the
+running, the service presents a local macOS warning even if the dashboard is
+closed; the dashboard also shows the 30-second countdown when open. Re-enable
+the extension before that deadline to cancel the warning. If it expires, the
 companion asks Chrome to quit gracefully; it does not force-kill Chrome. A
-closed Chrome instance does not start a warning.
+closed Chrome instance does not start a warning, and reopening Chrome without
+the extension starts a fresh warning cycle while the session remains active.
 
 For the full real-machine acceptance procedure, see
 [`desktop/docs/manual-strict-mode-checklist.md`](desktop/docs/manual-strict-mode-checklist.md).

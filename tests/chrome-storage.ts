@@ -56,6 +56,7 @@ export interface ChromeApiSpies {
   alarmsCreate: ReturnType<typeof vi.fn>;
   alarmsClear: ReturnType<typeof vi.fn>;
   connectNative: ReturnType<typeof vi.fn>;
+  getManifest: ReturnType<typeof vi.fn>;
   nativePorts: FakeNativePort[];
 }
 
@@ -120,6 +121,7 @@ export function installChromeApiSpies(): ChromeApiSpies {
       nativePorts.push(port);
       return port as unknown as chrome.runtime.Port;
     }),
+    getManifest: vi.fn(() => ({})),
     nativePorts,
   };
 
@@ -132,6 +134,7 @@ export function installChromeApiSpies(): ChromeApiSpies {
       onMessage: { addListener: vi.fn() },
       sendMessage: vi.fn(),
       connectNative: spies.connectNative,
+      getManifest: spies.getManifest,
     },
     tabs: { remove: spies.tabsRemove, sendMessage: spies.tabsSendMessage },
     notifications: { create: spies.notificationsCreate },
