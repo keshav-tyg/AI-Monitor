@@ -128,15 +128,28 @@ export function parseServiceFocusSettingsMessage(
   return revision === undefined || !settings ? undefined : { revision, settings };
 }
 
-export async function loadDesktopSettingsSnapshot(): Promise<DesktopSettingsSnapshot | undefined> {
+export type DesktopSettingsCacheRead =
+  | { readable: true; snapshot: DesktopSettingsSnapshot | undefined }
+  | { readable: false };
+
+export async function readDesktopSettingsCache(): Promise<DesktopSettingsCacheRead> {
   try {
     const stored = await chrome.storage.local.get(KEY_DESKTOP_SETTINGS_SNAPSHOT);
-    return parseDesktopSettingsSnapshot(
-      (stored as Record<string, unknown>)[KEY_DESKTOP_SETTINGS_SNAPSHOT],
-    );
+    return {
+      readable: true,
+      snapshot: parseDesktopSettingsSnapshot(
+        (stored as Record<string, unknown>)[KEY_DESKTOP_SETTINGS_SNAPSHOT],
+      ),
+    };
   } catch {
-    return undefined;
+    return { readable: false };
   }
+}
+
+/** Fail-open read for enforcement and display; revisioned writes use the read result above. */
+export async function loadDesktopSettingsSnapshot(): Promise<DesktopSettingsSnapshot | undefined> {
+  const cached = await readDesktopSettingsCache();
+  return cached.readable ? cached.snapshot : undefined;
 }
 
 export async function saveDesktopSettingsSnapshot(
@@ -155,8 +168,9 @@ export async function acceptDesktopSnapshot(value: unknown): Promise<boolean> {
 
   let accepted = false;
   const operation = acceptanceTail.then(async () => {
-    const cached = await loadDesktopSettingsSnapshot();
-    if (cached && snapshot.revision <= cached.revision) return;
+    const cached = await readDesktopSettingsCache();
+    if (!cached.readable) return;
+    if (cached.snapshot && snapshot.revision <= cached.snapshot.revision) return;
     await saveDesktopSettingsSnapshot(snapshot);
     accepted = true;
   });
