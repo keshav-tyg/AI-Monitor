@@ -1,14 +1,19 @@
 package com.localfocuscoach.strict.store;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.localfocuscoach.strict.core.SessionStatus;
+import com.localfocuscoach.strict.core.StrictMode;
+import com.localfocuscoach.strict.core.StrictSession;
 import com.localfocuscoach.strict.focus.FocusIntervention;
 import com.localfocuscoach.strict.focus.FocusRule;
 import com.localfocuscoach.strict.focus.FocusSettings;
 import com.localfocuscoach.strict.focus.FocusSite;
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -46,9 +51,19 @@ class SqliteFocusSettingsRepositoryTest {
     }
 
     @Test
-    void migrationKeepsStrictSessionStorageCompatible(@TempDir Path directory) throws Exception {
-        repository(directory);
+    void upgradesAV1SessionDatabaseWithoutLosingThePersistedSession(@TempDir Path directory)
+            throws Exception {
         var strictSessions = new SqliteStrictSessionRepository(database(directory));
+        var expected = new StrictSession(
+                java.util.UUID.fromString("00000000-0000-0000-0000-000000000008"),
+                StrictMode.INDEFINITE,
+                Instant.parse("2026-08-19T12:00:00Z"),
+                null,
+                true,
+                SessionStatus.ACTIVE);
+        strictSessions.save(expected);
+
+        repository(directory);
 
         try (var connection = DriverManager.getConnection("jdbc:sqlite:" + database(directory));
                 var statement = connection.createStatement();
@@ -58,9 +73,15 @@ class SqliteFocusSettingsRepositoryTest {
             assertEquals(1, result.getInt("version"));
             result.next();
             assertEquals(2, result.getInt("version"));
+            assertFalse(result.next());
         }
 
-        assertEquals(0L, strictSessions.loadActive().stream().count());
+        assertEquals(
+                expected.id(),
+                new SqliteStrictSessionRepository(database(directory))
+                        .loadActive()
+                        .map(StrictSession::id)
+                        .orElse(null));
     }
 
     private FocusSettingsRepository repository(Path directory) {
