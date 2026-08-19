@@ -1,8 +1,17 @@
-import { handleEvent, installBlock, resetSessions } from '../src/background/service-worker';
+import {
+  handleEvent,
+  installBlock,
+  resetSessions,
+  routeForTest,
+} from '../src/background/service-worker';
+import { resetNativeBridgeForTest } from '../src/background/native-bridge';
 import { DEFAULT_SETTINGS } from '../src/shared/constants';
-import { saveSettings } from '../src/shared/storage';
 import type { InterventionKind } from '../src/shared/types';
-import { installChromeApiSpies, installChromeStorageStub } from './chrome-storage';
+import {
+  cacheDesktopSettingsForTest,
+  installChromeApiSpies,
+  installChromeStorageStub,
+} from './chrome-storage';
 
 beforeEach(() => {
   installChromeApiSpies();
@@ -11,7 +20,7 @@ beforeEach(() => {
 });
 
 async function enableX(interventions: InterventionKind[]): Promise<void> {
-  await saveSettings({
+  await cacheDesktopSettingsForTest({
     enabled: true,
     rules: {
       ...DEFAULT_SETTINGS.rules,
@@ -19,6 +28,39 @@ async function enableX(interventions: InterventionKind[]): Promise<void> {
     },
   });
 }
+
+it('continues to enforce cached settings while the native bridge is disconnected', async () => {
+  await cacheDesktopSettingsForTest({
+    enabled: true,
+    rules: {
+      ...DEFAULT_SETTINGS.rules,
+      'x-timeline': {
+        ...DEFAULT_SETTINGS.rules['x-timeline'],
+        enabled: true,
+        warningScore: 1,
+        interventions: ['notify'],
+      },
+    },
+  }, 2);
+  resetNativeBridgeForTest();
+
+  await handleEvent(7, { site: 'x-timeline', kind: 'view-entered', at: 0 }, 0);
+  let decision = await handleEvent(7, { site: 'x-timeline', kind: 'scroll', at: 0 }, 0);
+  for (let index = 1; index <= 6; index += 1) {
+    decision = await handleEvent(
+      7,
+      { site: 'x-timeline', kind: 'scroll', at: index * 20_000 },
+      index * 20_000,
+    );
+  }
+  expect(decision).toMatchObject({ kind: 'notify' });
+});
+
+it('does not expose a browser-owned settings save route', async () => {
+  await expect(
+    routeForTest({ type: 'save-settings', settings: DEFAULT_SETTINGS } as never, undefined),
+  ).resolves.toEqual({ ok: false, error: 'Unknown request' });
+});
 
 it('does not enforce when a page event is unsupported or the rule is disabled', async () => {
   await expect(handleEvent(1, { site: 'x-timeline', kind: 'scroll', at: 10_000 }, 10_000)).resolves.toEqual({ kind: 'none' });

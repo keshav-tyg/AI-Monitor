@@ -116,6 +116,12 @@ export interface Settings {
   rules: Record<SiteId, SiteRule>;
 }
 
+/** The desktop service is authoritative; Chrome persists only this applied copy. */
+export interface DesktopSettingsSnapshot {
+  revision: number;
+  settings: Settings;
+}
+
 export interface SessionState {
   site: SiteId;
   enteredAt: number;
@@ -179,7 +185,6 @@ export interface SiteStatus {
 export type BackgroundRequest =
   | { type: 'event'; event: NormalizedEvent }
   | { type: 'get-status' }
-  | { type: 'save-settings'; settings: Settings }
   | { type: 'get-interventions' }
   | { type: 'set-feedback'; id: string; feedback: InterventionFeedback }
   | { type: 'leave-feed'; site: SiteId; reason: string }
@@ -192,7 +197,6 @@ export type BackgroundRequest =
 
 export type BackgroundResponse =
   | { ok: true; type: 'status'; enabled: boolean; sites: SiteStatus[]; settings: Settings }
-  | { ok: true; type: 'settings'; settings: Settings }
   | { ok: true; type: 'interventions'; records: InterventionRecord[] }
   | { ok: true; type: 'activity'; entries: ActivityEntry[] }
   | { ok: true; type: 'ack' }

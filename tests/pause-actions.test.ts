@@ -1,6 +1,9 @@
-import { installChromeApiSpies, installChromeStorageStub } from './chrome-storage';
 import { DEFAULT_SETTINGS } from '../src/shared/constants';
-import { saveSettings } from '../src/shared/storage';
+import {
+  cacheDesktopSettingsForTest,
+  installChromeApiSpies,
+  installChromeStorageStub,
+} from './chrome-storage';
 
 type RuntimeListener = (
   message: unknown,
@@ -37,7 +40,7 @@ it('closes the tab that asked to leave a pause screen', async () => {
 it('reopens a left feed directly into its existing pause', async () => {
   installChromeStorageStub();
   const spies = installChromeApiSpies();
-  await saveSettings({
+  await cacheDesktopSettingsForTest({
     enabled: true,
     rules: {
       ...DEFAULT_SETTINGS.rules,

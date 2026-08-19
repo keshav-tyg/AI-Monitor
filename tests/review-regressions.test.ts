@@ -3,9 +3,13 @@ import { handleEvent, resetSessions, routeForTest } from '../src/background/serv
 import { applyEvent, initialSession } from '../src/engine/score';
 import { startPopup } from '../src/popup/main';
 import { DEFAULT_SETTINGS } from '../src/shared/constants';
-import { getUsage, saveReturnPause, saveSettings } from '../src/shared/storage';
+import { getUsage, saveReturnPause } from '../src/shared/storage';
 import type { InterventionKind } from '../src/shared/types';
-import { installChromeApiSpies, installChromeStorageStub } from './chrome-storage';
+import {
+  cacheDesktopSettingsForTest,
+  installChromeApiSpies,
+  installChromeStorageStub,
+} from './chrome-storage';
 
 beforeEach(() => {
   installChromeApiSpies();
@@ -18,7 +22,7 @@ afterEach(() => {
 });
 
 async function enableReels(interventions: InterventionKind[]): Promise<void> {
-  await saveSettings({
+  await cacheDesktopSettingsForTest({
     enabled: true,
     rules: {
       ...DEFAULT_SETTINGS.rules,
