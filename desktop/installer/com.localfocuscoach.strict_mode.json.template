@@ -1,0 +1,9 @@
+{
+  "name": "com.localfocuscoach.strict_mode",
+  "description": "Local Focus Coach Strict Mode relay",
+  "path": "__RELAY_EXECUTABLE__",
+  "type": "stdio",
+  "allowed_origins": [
+    "__ALLOWED_ORIGIN__"
+  ]
+}
