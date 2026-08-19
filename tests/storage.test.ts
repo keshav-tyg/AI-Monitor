@@ -3,14 +3,16 @@ import {
   appendIntervention,
   clearDeclaration,
   getDeclaration,
-  getSettings,
   getUsage,
+  legacySettingsForImport,
+  loadEnforcementSettings,
   listInterventions,
   saveDeclaration,
 } from '../src/shared/storage';
+import { saveDesktopSettingsSnapshot } from '../src/shared/desktop-settings';
 import { installChromeStorageStub } from './chrome-storage';
 import { DEFAULT_SETTINGS } from '../src/shared/constants';
-import type { DeclarationEntry } from '../src/shared/types';
+import type { DeclarationEntry, Settings } from '../src/shared/types';
 
 beforeEach(() => {
   installChromeStorageStub();
@@ -29,21 +31,65 @@ function declaration(overrides: Partial<DeclarationEntry> = {}): DeclarationEntr
 }
 
 describe('local persistence', () => {
-  it('ignores a persisted legacy daily allowance field', async () => {
+  it('returns old extension settings for one-time import but never enforcement', async () => {
+    const expected: Settings = {
+      enabled: true,
+      rules: {
+        ...DEFAULT_SETTINGS.rules,
+        'instagram-reels': {
+          ...DEFAULT_SETTINGS.rules['instagram-reels'],
+          enabled: true,
+        },
+      },
+    };
     await chrome.storage.local.set({
       settings: {
-        enabled: true,
+        ...expected,
         rules: {
+          ...expected.rules,
+          'instagram-reels': { ...expected.rules['instagram-reels'], dailyAllowanceMinutes: 1 },
+        },
+      },
+    });
+
+    expect(await legacySettingsForImport()).toEqual(expected);
+    expect(await loadEnforcementSettings()).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('enforces the last valid desktop snapshot without consulting legacy settings', async () => {
+    const cached: Settings = {
+      enabled: true,
+      rules: {
+        ...DEFAULT_SETTINGS.rules,
+        'x-timeline': {
+          ...DEFAULT_SETTINGS.rules['x-timeline'],
+          enabled: true,
+          interventions: ['notify'],
+        },
+      },
+    };
+    await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
+    await saveDesktopSettingsSnapshot({ revision: 3, settings: cached });
+
+    expect(await loadEnforcementSettings()).toEqual(cached);
+  });
+
+  it('omits invalid legacy settings from the import handshake', async () => {
+    await chrome.storage.local.set({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        rules: {
+          ...DEFAULT_SETTINGS.rules,
           'instagram-reels': {
             ...DEFAULT_SETTINGS.rules['instagram-reels'],
-            dailyAllowanceMinutes: 1,
+            warningScore: 51,
           },
         },
       },
     });
 
-    const settings = await getSettings();
-    expect(settings.rules['instagram-reels']).not.toHaveProperty('dailyAllowanceMinutes');
+    expect(await legacySettingsForImport()).toBeUndefined();
+    expect(await loadEnforcementSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
   it('resets one site usage when the local day changes', async () => {

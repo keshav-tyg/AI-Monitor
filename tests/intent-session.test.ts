@@ -7,8 +7,12 @@ vi.mock('../src/background/classifier-client', () => ({
 
 import { resetSessions, routeForTest } from '../src/background/service-worker';
 import { DEFAULT_SETTINGS } from '../src/shared/constants';
-import { listActivity, listInterventions, saveSettings } from '../src/shared/storage';
-import { installChromeApiSpies, installChromeStorageStub } from './chrome-storage';
+import { listActivity, listInterventions } from '../src/shared/storage';
+import {
+  cacheDesktopSettingsForTest,
+  installChromeApiSpies,
+  installChromeStorageStub,
+} from './chrome-storage';
 
 beforeEach(async () => {
   vi.useFakeTimers();
@@ -18,7 +22,7 @@ beforeEach(async () => {
   resetSessions();
   classifyMock.mockReset();
   classifyMock.mockResolvedValue(undefined);
-  await saveSettings({
+  await cacheDesktopSettingsForTest({
     enabled: true,
     rules: {
       ...DEFAULT_SETTINGS.rules,
@@ -202,7 +206,7 @@ it('fails open when classification rejects', async () => {
 });
 
 it('closes a walled feed when Leave is chosen even without legacy close-tab enforcement', async () => {
-  await saveSettings({
+  await cacheDesktopSettingsForTest({
     enabled: true,
     rules: {
       ...DEFAULT_SETTINGS.rules,

@@ -1,9 +1,9 @@
+import { MAX_ACTIVITY_RECORDS, MAX_INTERVENTION_RECORDS } from './constants';
 import {
-  DEFAULT_SETTINGS,
-  MAX_ACTIVITY_RECORDS,
-  MAX_INTERVENTION_RECORDS,
-  SITE_IDS,
-} from './constants';
+  cloneDefaultSettings,
+  loadDesktopSettingsSnapshot,
+  normalizeLegacySettings,
+} from './desktop-settings';
 import { todayKey } from './time';
 import type {
   ActivityEntry,
@@ -12,7 +12,6 @@ import type {
   InterventionRecord,
   Settings,
   SiteId,
-  SiteRule,
 } from './types';
 
 /**
@@ -57,34 +56,15 @@ async function writeKey(key: string, value: unknown): Promise<void> {
   await chrome.storage.local.set({ [key]: value });
 }
 
-/**
- * Missing or partially-written settings resolve to defaults rather than
- * throwing: an unreadable rule must fail open, not enforce something random.
- */
-export async function getSettings(): Promise<Settings> {
-  const stored = await readKey<Partial<Settings>>(KEY_SETTINGS, {});
-  const rules = {} as Record<SiteId, SiteRule>;
-  for (const site of SITE_IDS) {
-    const legacyRule = stored.rules?.[site] as Partial<SiteRule> | undefined;
-    const fallback = DEFAULT_SETTINGS.rules[site];
-    // Construct the supported shape explicitly. Old allowance fields (and any
-    // other stale keys) remain harmless in local storage and disappear on the
-    // next Options save.
-    rules[site] = {
-      enabled: legacyRule?.enabled ?? fallback.enabled,
-      warningScore: legacyRule?.warningScore ?? fallback.warningScore,
-      gracePeriodSeconds: legacyRule?.gracePeriodSeconds ?? fallback.gracePeriodSeconds,
-      doomscrollBudgetMinutes:
-        legacyRule?.doomscrollBudgetMinutes ?? fallback.doomscrollBudgetMinutes,
-      interventions: legacyRule?.interventions ?? fallback.interventions,
-      blockUntil: legacyRule?.blockUntil ?? fallback.blockUntil,
-    };
-  }
-  return { enabled: stored.enabled ?? DEFAULT_SETTINGS.enabled, rules };
+/** Missing or corrupt desktop state enforces nothing. Legacy settings never enter this path. */
+export async function loadEnforcementSettings(): Promise<Settings> {
+  return (await loadDesktopSettingsSnapshot())?.settings ?? cloneDefaultSettings();
 }
 
-export async function saveSettings(settings: Settings): Promise<void> {
-  await writeKey(KEY_SETTINGS, settings);
+/** The old browser-owned value is exposed only for the service's one-time import handshake. */
+export async function legacySettingsForImport(): Promise<Settings | undefined> {
+  const stored = await readKey<unknown>(KEY_SETTINGS, undefined);
+  return stored === undefined ? undefined : normalizeLegacySettings(stored);
 }
 
 /** Zero once the stored day is no longer today — the daily reset. */

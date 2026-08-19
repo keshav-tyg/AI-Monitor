@@ -1,3 +1,6 @@
+import { saveDesktopSettingsSnapshot } from '../src/shared/desktop-settings';
+import type { Settings } from '../src/shared/types';
+
 /**
  * In-memory stand-in for `chrome.storage.local`.
  *
@@ -45,6 +48,14 @@ export function installChromeStorageStub(): Map<string, unknown> {
   };
 
   return store;
+}
+
+/** Mirrors the only settings state enforcement is allowed to consume. */
+export async function cacheDesktopSettingsForTest(
+  settings: Settings,
+  revision: number = 1,
+): Promise<void> {
+  await saveDesktopSettingsSnapshot({ revision, settings });
 }
 
 export interface ChromeApiSpies {

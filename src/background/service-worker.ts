@@ -19,13 +19,12 @@ import {
   getBlocks,
   getDeclaration,
   getReturnPause,
-  getSettings,
+  loadEnforcementSettings,
   listActivity,
   listInterventions,
   saveBlocks,
   saveDeclaration,
   saveReturnPause,
-  saveSettings,
   setFeedback,
   type BlockEntry,
 } from '../shared/storage';
@@ -44,7 +43,6 @@ import type {
   InterventionKind,
   NormalizedEvent,
   SessionState,
-  Settings,
   SiteId,
   SiteStatus,
 } from '../shared/types';
@@ -428,7 +426,7 @@ export async function handleEvent(
   if (!isSupportedSite(event.site)) return { kind: 'none' };
   if (typeof event.at !== 'number') return { kind: 'none' };
 
-  const settings = await getSettings();
+  const settings = await loadEnforcementSettings();
   if (!settings.enabled) return { kind: 'none' };
 
   const rule = settings.rules[event.site];
@@ -546,7 +544,7 @@ export async function handleEvent(
 }
 
 async function buildStatus(now: number): Promise<BackgroundResponse> {
-  const settings = await getSettings();
+  const settings = await loadEnforcementSettings();
   const activeSites = new Set([...sessions.values()].map((session) => session.site));
 
   const sites: SiteStatus[] = [];
@@ -581,9 +579,6 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
     }
     case 'get-status':
       return buildStatus(Date.now());
-    case 'save-settings':
-      await saveSettings(request.settings as Settings);
-      return { ok: true, type: 'settings', settings: await getSettings() };
     case 'get-interventions':
       return { ok: true, type: 'interventions', records: await listInterventions() };
     case 'set-feedback':
@@ -600,7 +595,7 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
       sessions.delete(tabId);
       suppressedUntil.delete(tabId);
       // Closing a legacy pause tab is only allowed when the rule selected it.
-      const settings = await getSettings();
+      const settings = await loadEnforcementSettings();
       if (settings.rules[request.site]?.interventions.includes('close-tab')) {
         await chrome.tabs.remove(tabId);
       }
@@ -628,7 +623,7 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
       };
       arrivals.set(tabId, arrival);
 
-      const settings = await getSettings();
+      const settings = await loadEnforcementSettings();
       const rule = settings.rules[request.site];
       if (settings.enabled && rule?.enabled) {
         await evaluateDeclaration(tabId, arrival, now, rule.doomscrollBudgetMinutes);
@@ -657,7 +652,7 @@ async function route(request: BackgroundRequest, tabId: number | undefined): Pro
         });
       });
 
-      const settings = await getSettings();
+      const settings = await loadEnforcementSettings();
       const budgetMinutes = settings.rules[request.site]?.doomscrollBudgetMinutes ?? 0;
       await logActivity(
         request.site,
@@ -732,7 +727,11 @@ function registerListeners(): void {
 }
 
 registerListeners();
-startNativeBridge();
+startNativeBridge(() => {
+  // The bridge has already persisted the validated snapshot. Settings are
+  // intentionally read from that cache per request, never mirrored as a
+  // second mutable authority in worker memory.
+});
 
 export type { BlockEntry };
 
