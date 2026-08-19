@@ -2,6 +2,7 @@ package com.localfocuscoach.strict.dashboard;
 
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -25,11 +26,16 @@ import javafx.scene.layout.VBox;
 public final class StrictModeView extends BorderPane {
     private static final String STATUS_REQUEST = "dashboard.status";
     private static final String START_REQUEST = "dashboard.start";
+    private static final long MAX_DURATION_MINUTES = 365L * 24 * 60;
 
     private final ServiceClient client;
     private final Clock clock;
     private final Runnable unlockAction;
     private final Timeline refreshTimer;
+    private boolean statusRequestInFlight;
+    private boolean actionRequestInFlight;
+    private boolean disposed;
+    private long responseGeneration;
 
     public StrictModeView(ServiceClient client, Runnable unlockAction) {
         this(client, Clock.systemUTC(), unlockAction);
@@ -53,14 +59,27 @@ public final class StrictModeView extends BorderPane {
     }
 
     public void refresh() {
-        try {
-            renderStatus(client.request(STATUS_REQUEST, Map.of()));
-        } catch (RuntimeException exception) {
-            renderIdle("Strict Mode service is unavailable");
+        if (disposed || statusRequestInFlight || actionRequestInFlight) {
+            return;
         }
+        statusRequestInFlight = true;
+        var generation = responseGeneration;
+        client.requestAsync(STATUS_REQUEST, Map.of(), (response, failure) -> {
+            statusRequestInFlight = false;
+            if (disposed || generation != responseGeneration) {
+                return;
+            }
+            if (failure != null) {
+                renderIdle("Strict Mode service is unavailable");
+            } else {
+                renderStatus(response);
+            }
+        });
     }
 
     public void dispose() {
+        disposed = true;
+        responseGeneration++;
         refreshTimer.stop();
     }
 
@@ -162,10 +181,14 @@ public final class StrictModeView extends BorderPane {
                 feedback.setText("Enter a positive duration in minutes");
                 return;
             }
+            if (minutes > MAX_DURATION_MINUTES) {
+                feedback.setText("Duration must be 525,600 minutes or less");
+                return;
+            }
             final Instant endsAt;
             try {
                 endsAt = clock.instant().plus(Duration.ofMinutes(minutes));
-            } catch (ArithmeticException exception) {
+            } catch (ArithmeticException | DateTimeException exception) {
                 feedback.setText("Enter a positive duration in minutes");
                 return;
             }
@@ -177,17 +200,25 @@ public final class StrictModeView extends BorderPane {
             payload.put("earlyExitChallenge", true);
         }
 
-        try {
-            var response = client.request(START_REQUEST, payload);
-            if (!"service.status".equals(response.type())
+        if (actionRequestInFlight) {
+            return;
+        }
+        actionRequestInFlight = true;
+        responseGeneration++;
+        client.requestAsync(START_REQUEST, payload, (response, failure) -> {
+            actionRequestInFlight = false;
+            if (disposed) {
+                return;
+            }
+            if (failure != null
+                    || response == null
+                    || !"service.status".equals(response.type())
                     || !Boolean.TRUE.equals(response.payload().get("active"))) {
                 feedback.setText("Unable to start Strict Mode");
                 return;
             }
             renderActive(response.payload());
-        } catch (RuntimeException exception) {
-            feedback.setText("Unable to start Strict Mode");
-        }
+        });
     }
 
     private void renderActive(Map<String, Object> status) {

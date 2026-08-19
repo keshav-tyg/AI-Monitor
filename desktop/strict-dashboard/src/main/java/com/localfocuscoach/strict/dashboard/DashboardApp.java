@@ -14,6 +14,7 @@ public final class DashboardApp {
         private Stage stage;
         private ServiceClient client;
         private StrictModeView strictModeView;
+        private UnlockChallengeView unlockChallengeView;
 
         @Override
         public void start(Stage primaryStage) {
@@ -31,11 +32,21 @@ public final class DashboardApp {
             if (strictModeView != null) {
                 strictModeView.dispose();
             }
+            if (unlockChallengeView != null) {
+                unlockChallengeView.dispose();
+            }
+            if (client != null) {
+                client.close();
+            }
         }
 
         private void showDashboard() {
             if (strictModeView != null) {
                 strictModeView.dispose();
+            }
+            if (unlockChallengeView != null) {
+                unlockChallengeView.dispose();
+                unlockChallengeView = null;
             }
             strictModeView = new StrictModeView(client, this::showUnlockChallenge);
             setRoot(strictModeView);
@@ -43,11 +54,8 @@ public final class DashboardApp {
 
         private void showUnlockChallenge() {
             strictModeView.dispose();
-            setRoot(new UnlockChallengeView(client, unlocked -> {
-                if (unlocked) {
-                    showDashboard();
-                }
-            }));
+            unlockChallengeView = new UnlockChallengeView(client, this::showDashboard);
+            setRoot(unlockChallengeView);
         }
 
         private void setRoot(javafx.scene.Parent root) {

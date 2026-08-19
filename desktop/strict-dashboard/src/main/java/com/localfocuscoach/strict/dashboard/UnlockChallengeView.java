@@ -2,7 +2,6 @@ package com.localfocuscoach.strict.dashboard;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Consumer;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -14,6 +13,7 @@ import javafx.scene.input.DragEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
 
@@ -23,15 +23,21 @@ public final class UnlockChallengeView extends BorderPane {
     private static final String FAILURE_MESSAGE = "Challenge not complete";
 
     private final ServiceClient client;
-    private final Consumer<Boolean> completion;
+    private final Runnable returnToDashboard;
     private final ChallengeTextArea candidate = new ChallengeTextArea();
     private final Label feedback = new Label();
     private final Button submit = new Button("Unlock Strict Mode");
+    private final Button retry = new Button("Retry challenge");
+    private final Button back = new Button("Back to dashboard");
+    private final Label targetLabel = new Label();
     private String target = "";
+    private boolean requestInFlight;
+    private boolean disposed;
+    private long responseGeneration;
 
-    public UnlockChallengeView(ServiceClient client, Consumer<Boolean> completion) {
+    public UnlockChallengeView(ServiceClient client, Runnable returnToDashboard) {
         this.client = Objects.requireNonNull(client);
-        this.completion = Objects.requireNonNull(completion);
+        this.returnToDashboard = Objects.requireNonNull(returnToDashboard);
         setStyle("-fx-background-color: #f7f7f4;");
         configureCandidate();
         render();
@@ -50,35 +56,67 @@ public final class UnlockChallengeView extends BorderPane {
         // Drag-and-drop input is deliberately ignored.
     }
 
-    public SubmissionResult submit(String fullCandidate) {
+    public void submit(String fullCandidate) {
         if (target.isEmpty() || fullCandidate == null || fullCandidate.length() != target.length()) {
-            return showResult(false);
+            showResult(false);
+            return;
         }
-        try {
-            var response = client.request(SUBMIT_REQUEST, Map.of("candidate", fullCandidate));
-            var unlocked = "service.unlockResult".equals(response.type())
+        if (disposed || requestInFlight) {
+            return;
+        }
+        requestInFlight = true;
+        candidate.setDisable(true);
+        submit.setDisable(true);
+        var generation = ++responseGeneration;
+        client.requestAsync(
+                SUBMIT_REQUEST, Map.of("candidate", fullCandidate), (response, failure) -> {
+            if (disposed || generation != responseGeneration) {
+                return;
+            }
+            requestInFlight = false;
+            candidate.setDisable(false);
+            submit.setDisable(candidate.getLength() != target.length());
+            var unlocked = failure == null
+                    && response != null
+                    && "service.unlockResult".equals(response.type())
                     && Boolean.TRUE.equals(response.payload().get("unlocked"));
-            return showResult(unlocked);
-        } catch (RuntimeException exception) {
-            return showResult(false);
-        }
+            showResult(unlocked);
+        });
     }
 
     private void beginChallenge() {
-        try {
-            var response = client.request(BEGIN_REQUEST, Map.of());
-            var value = response.payload().get("target");
-            if (!"service.challenge".equals(response.type()) || !(value instanceof String text)) {
+        if (disposed || requestInFlight) {
+            return;
+        }
+        requestInFlight = true;
+        target = "";
+        targetLabel.setText("");
+        candidate.clear();
+        candidate.setDisable(true);
+        submit.setDisable(true);
+        setShown(retry, false);
+        feedback.setText("Loading challenge…");
+        var generation = ++responseGeneration;
+        client.requestAsync(BEGIN_REQUEST, Map.of(), (response, failure) -> {
+            if (disposed || generation != responseGeneration) {
+                return;
+            }
+            requestInFlight = false;
+            var value = response == null ? null : response.payload().get("target");
+            if (failure != null
+                    || response == null
+                    || !"service.challenge".equals(response.type())
+                    || !(value instanceof String text)) {
                 showUnavailable();
                 return;
             }
             target = text;
-            ((Label) lookup("#challengeTarget")).setText(target);
+            targetLabel.setText(target);
+            candidate.setDisable(false);
+            feedback.setText("");
             submit.setDisable(target.isEmpty() || candidate.getLength() != target.length());
             candidate.requestFocus();
-        } catch (RuntimeException exception) {
-            showUnavailable();
-        }
+        });
     }
 
     private void render() {
@@ -88,7 +126,6 @@ public final class UnlockChallengeView extends BorderPane {
                 "Type the complete target exactly. You can correct mistakes with Backspace, but clipboard and drag-and-drop input are disabled.");
         instructions.setWrapText(true);
 
-        var targetLabel = new Label();
         targetLabel.setId("challengeTarget");
         targetLabel.setFont(Font.font("Monospaced", 14));
         targetLabel.setWrapText(true);
@@ -105,11 +142,19 @@ public final class UnlockChallengeView extends BorderPane {
         submit.setDefaultButton(true);
         submit.setOnAction(event -> submit(candidate.getText()));
 
+        retry.setId("retryChallenge");
+        setShown(retry, false);
+        retry.setOnAction(event -> beginChallenge());
+
+        back.setId("backToDashboard");
+        back.setOnAction(event -> returnToDashboard());
+
         feedback.setId("challengeFeedback");
         feedback.setWrapText(true);
         feedback.setStyle("-fx-text-fill: #8a331f;");
 
-        var content = new VBox(14, title, instructions, targetLabel, candidate, feedback, submit);
+        var actions = new HBox(10, submit, retry, back);
+        var content = new VBox(14, title, instructions, targetLabel, candidate, feedback, actions);
         content.setAlignment(Pos.CENTER_LEFT);
         content.setMaxWidth(680);
         setCenter(content);
@@ -148,22 +193,40 @@ public final class UnlockChallengeView extends BorderPane {
                 || (event.getCode() == KeyCode.INSERT && event.isShiftDown());
     }
 
-    private SubmissionResult showResult(boolean unlocked) {
+    private void showResult(boolean unlocked) {
         var message = unlocked ? "Strict Mode unlocked" : FAILURE_MESSAGE;
         feedback.setText(message);
         if (unlocked) {
-            completion.accept(true);
+            returnToDashboard();
         }
-        return new SubmissionResult(unlocked, message);
     }
 
     private void showUnavailable() {
         target = "";
+        targetLabel.setText("");
+        candidate.setDisable(true);
         feedback.setText("Challenge unavailable");
         submit.setDisable(true);
+        setShown(retry, true);
     }
 
-    public record SubmissionResult(boolean unlocked, String message) {}
+    public void dispose() {
+        disposed = true;
+        responseGeneration++;
+    }
+
+    private void returnToDashboard() {
+        if (disposed) {
+            return;
+        }
+        dispose();
+        returnToDashboard.run();
+    }
+
+    private static void setShown(javafx.scene.Node node, boolean shown) {
+        node.setVisible(shown);
+        node.setManaged(shown);
+    }
 
     private static final class ChallengeTextArea extends TextArea {
         @Override
