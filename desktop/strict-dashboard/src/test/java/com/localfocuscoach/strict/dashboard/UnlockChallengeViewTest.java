@@ -9,18 +9,73 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import javafx.event.Event;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.input.ContextMenuEvent;
+import javafx.scene.input.DragEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.TransferMode;
 import org.junit.jupiter.api.Test;
 
 class UnlockChallengeViewTest {
     private static final String SECRET = "dashboard-test-secret";
     private static final String TARGET = "abc";
+
+    @Test
+    void beginFailureOffersRetryAndReturnWithoutRestartingTheApp() {
+        var attempts = new AtomicInteger();
+        var returned = new AtomicBoolean();
+        var view = FxTestSupport.call(() -> new UnlockChallengeView(
+                new ServiceClient(SECRET, request -> {
+                    if (attempts.incrementAndGet() == 1) {
+                        return response("error.unlockUnavailable", Map.of());
+                    }
+                    return challengeResponse();
+                }),
+                () -> returned.set(true)));
+        FxTestSupport.waitFor(
+                () -> "Challenge unavailable".equals(feedback(view)), "challenge failure");
+
+        FxTestSupport.call(() -> {
+            var retry = (Button) view.lookup("#retryChallenge");
+            var back = (Button) view.lookup("#backToDashboard");
+            assertTrue(retry.isVisible());
+            assertTrue(back.isVisible());
+            retry.fire();
+            return null;
+        });
+        FxTestSupport.waitFor(
+                () -> TARGET.equals(((Label) view.lookup("#challengeTarget")).getText()),
+                "retried challenge");
+        FxTestSupport.call(() -> {
+            ((Button) view.lookup("#backToDashboard")).fire();
+            return null;
+        });
+
+        assertEquals(2, attempts.get());
+        assertTrue(returned.get());
+    }
+
+    @Test
+    void backRemainsAvailableWhenATimedSessionExpiresDuringTheChallenge() {
+        var returned = new AtomicBoolean();
+        var view = view(new ArrayList<>(), false, returned);
+        FxTestSupport.waitFor(
+                () -> TARGET.equals(((Label) view.lookup("#challengeTarget")).getText()),
+                "challenge target");
+
+        FxTestSupport.call(() -> {
+            view.submit(TARGET);
+            ((Button) view.lookup("#backToDashboard")).fire();
+            return null;
+        });
+
+        assertTrue(returned.get());
+    }
 
     @Test
     void beginsChallengeAndRendersAWrappingMonospaceTarget() {
@@ -58,17 +113,32 @@ class UnlockChallengeViewTest {
         FxTestSupport.call(() -> {
             var input = (TextArea) view.lookup("#challengeCandidate");
             var contextReachedControl = new AtomicBoolean();
+            var dropReachedControl = new AtomicBoolean();
             input.addEventHandler(
                     ContextMenuEvent.CONTEXT_MENU_REQUESTED,
                     event -> contextReachedControl.set(true));
+            input.addEventHandler(DragEvent.DRAG_DROPPED, event -> dropReachedControl.set(true));
             view.onPaste();
             view.onDrop("abc");
             input.appendText("abc");
             var contextMenu = new ContextMenuEvent(
                     ContextMenuEvent.CONTEXT_MENU_REQUESTED, 0, 0, 0, 0, false, null);
             Event.fireEvent(input, contextMenu);
+            var drop = new DragEvent(
+                    DragEvent.DRAG_DROPPED,
+                    null,
+                    0,
+                    0,
+                    0,
+                    0,
+                    TransferMode.COPY,
+                    null,
+                    null,
+                    null);
+            Event.fireEvent(input, drop);
             assertEquals("", view.currentCandidate());
             assertFalse(contextReachedControl.get());
+            assertFalse(dropReachedControl.get());
             assertEquals(null, input.getContextMenu());
             return null;
         });
@@ -110,13 +180,20 @@ class UnlockChallengeViewTest {
         var requests = new ArrayList<ProtocolMessage>();
         var view = view(requests, false, new AtomicBoolean());
 
-        var shortResult = FxTestSupport.call(() -> view.submit("ab"));
-        var wrongResult = FxTestSupport.call(() -> view.submit("abd"));
+        FxTestSupport.call(() -> {
+            view.submit("ab");
+            view.submit("abd");
+            return null;
+        });
+        FxTestSupport.waitFor(
+                () -> requestTypes(requests).contains("dashboard.submitUnlock"),
+                "full candidate submission");
+        FxTestSupport.waitFor(
+                () -> "Challenge not complete".equals(feedback(view)), "generic failure");
 
-        assertEquals("Challenge not complete", shortResult.message());
-        assertEquals("Challenge not complete", wrongResult.message());
-        assertFalse(wrongResult.message().contains("position"));
-        assertFalse(wrongResult.message().matches(".*\\d+.*"));
+        assertEquals("Challenge not complete", feedback(view));
+        assertFalse(feedback(view).contains("position"));
+        assertFalse(feedback(view).matches(".*\\d+.*"));
         assertEquals(
                 List.of("dashboard.beginUnlock", "dashboard.submitUnlock"),
                 requestTypes(requests));
@@ -129,10 +206,13 @@ class UnlockChallengeViewTest {
         var completed = new AtomicBoolean();
         var view = view(new ArrayList<>(), true, completed);
 
-        var result = FxTestSupport.call(() -> view.submit(TARGET));
+        FxTestSupport.call(() -> {
+            view.submit(TARGET);
+            return null;
+        });
+        FxTestSupport.waitFor(completed::get, "successful unlock");
 
-        assertTrue(result.unlocked());
-        assertEquals("Strict Mode unlocked", result.message());
+        assertEquals("Strict Mode unlocked", feedback(view));
         assertTrue(completed.get());
     }
 
@@ -155,7 +235,7 @@ class UnlockChallengeViewTest {
 
     private static UnlockChallengeView view(
             List<ProtocolMessage> requests, boolean unlocks, AtomicBoolean completed) {
-        return FxTestSupport.call(() -> new UnlockChallengeView(
+        var view = FxTestSupport.call(() -> new UnlockChallengeView(
                 new ServiceClient(SECRET, request -> {
                     requests.add(request);
                     if (request.type().equals("dashboard.beginUnlock")) {
@@ -168,7 +248,11 @@ class UnlockChallengeViewTest {
                     }
                     return response("service.unlockResult", Map.of("unlocked", unlocks));
                 }),
-                completed::set));
+                () -> completed.set(true)));
+        FxTestSupport.waitFor(
+                () -> TARGET.equals(((Label) view.lookup("#challengeTarget")).getText()),
+                "challenge target");
+        return view;
     }
 
     private static KeyEvent keyPressed(KeyCode code, boolean control, boolean meta) {
@@ -181,5 +265,18 @@ class UnlockChallengeViewTest {
 
     private static ProtocolMessage response(String type, Map<String, Object> payload) {
         return new ProtocolMessage(1, SECRET, type, payload);
+    }
+
+    private static ProtocolMessage challengeResponse() {
+        return response(
+                "service.challenge",
+                Map.of(
+                        "challengeId", "challenge-id",
+                        "target", TARGET,
+                        "createdAt", "2026-08-18T12:00:00Z"));
+    }
+
+    private static String feedback(UnlockChallengeView view) {
+        return ((Label) view.lookup("#challengeFeedback")).getText();
     }
 }

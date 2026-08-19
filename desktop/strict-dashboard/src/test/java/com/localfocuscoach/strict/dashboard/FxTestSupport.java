@@ -4,6 +4,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import javafx.application.Platform;
 
 final class FxTestSupport {
@@ -33,6 +34,22 @@ final class FxTestSupport {
         } catch (Exception exception) {
             throw new AssertionError(exception);
         }
+    }
+
+    static void waitFor(BooleanSupplier condition, String description) {
+        var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        while (System.nanoTime() < deadline) {
+            if (call(condition::getAsBoolean)) {
+                return;
+            }
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(exception);
+            }
+        }
+        throw new AssertionError("Timed out waiting for " + description);
     }
 
     private static void await(CountDownLatch latch) {

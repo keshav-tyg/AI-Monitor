@@ -10,6 +10,12 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
@@ -20,6 +26,73 @@ import org.junit.jupiter.api.Test;
 class StrictModeViewTest {
     private static final String SECRET = "dashboard-test-secret";
     private static final Instant NOW = Instant.parse("2026-08-18T12:00:00Z");
+
+    @Test
+    void statusExchangeNeverRunsOnTheJavaFxThread() throws Exception {
+        var exchangeRan = new CountDownLatch(1);
+        var exchangeOnFxThread = new AtomicBoolean();
+        var client = new ServiceClient(SECRET, request -> {
+            exchangeOnFxThread.set(Platform.isFxApplicationThread());
+            exchangeRan.countDown();
+            return inactiveStatus();
+        });
+
+        var view = FxTestSupport.call(() -> new StrictModeView(
+                client, Clock.fixed(NOW, ZoneOffset.UTC), () -> {}));
+
+        assertTrue(exchangeRan.await(1, TimeUnit.SECONDS));
+        assertFalse(exchangeOnFxThread.get());
+        FxTestSupport.call(() -> {
+            view.dispose();
+            return null;
+        });
+        client.close();
+    }
+
+    @Test
+    void statusPollingDoesNotOverlapAnOutstandingRequest() throws Exception {
+        var requestCount = new AtomicInteger();
+        var secondRequestStarted = new CountDownLatch(1);
+        var releaseSecondRequest = new CountDownLatch(1);
+        var client = new ServiceClient(SECRET, request -> {
+            var count = requestCount.incrementAndGet();
+            if (count >= 2) {
+                secondRequestStarted.countDown();
+                try {
+                    releaseSecondRequest.await(1, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+            }
+            return inactiveStatus();
+        });
+        var view = FxTestSupport.call(() -> new StrictModeView(
+                client, Clock.fixed(NOW, ZoneOffset.UTC), () -> {}));
+        FxTestSupport.waitFor(
+                () -> view.lookup("#durationMinutes") != null, "initial idle dashboard");
+
+        try (var releaser = Executors.newVirtualThreadPerTaskExecutor()) {
+            releaser.submit(() -> {
+                secondRequestStarted.await(1, TimeUnit.SECONDS);
+                releaseSecondRequest.countDown();
+                return null;
+            });
+            FxTestSupport.call(() -> {
+                view.refresh();
+                view.refresh();
+                return null;
+            });
+        }
+
+        assertTrue(secondRequestStarted.await(1, TimeUnit.SECONDS));
+        assertEquals(2, requestCount.get());
+        FxTestSupport.call(() -> {
+            view.dispose();
+            return null;
+        });
+        client.close();
+    }
 
     @Test
     void timedStartRequiresAPositiveWholeMinuteDuration() {
@@ -43,6 +116,21 @@ class StrictModeViewTest {
     }
 
     @Test
+    void timedStartRejectsAnImpracticallyLargeDuration() {
+        var starts = new ArrayList<ProtocolMessage>();
+        var view = idleView(starts);
+
+        FxTestSupport.call(() -> {
+            ((TextField) view.lookup("#durationMinutes")).setText("525601");
+            ((Button) view.lookup("#startSession")).fire();
+            assertEquals("Duration must be 525,600 minutes or less", feedback(view));
+            return null;
+        });
+
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
     void timedStartSendsThePerSessionEarlyExitChoice() {
         var starts = new ArrayList<ProtocolMessage>();
         var view = idleView(starts);
@@ -53,6 +141,7 @@ class StrictModeViewTest {
             ((Button) view.lookup("#startSession")).fire();
             return null;
         });
+        FxTestSupport.waitFor(() -> starts.size() == 1, "timed session start");
 
         assertEquals(1, starts.size());
         assertEquals(
@@ -91,6 +180,7 @@ class StrictModeViewTest {
             ((Button) view.lookup("#startSession")).fire();
             return null;
         });
+        FxTestSupport.waitFor(() -> starts.size() == 1, "indefinite session start");
 
         assertEquals(
                 Map.of("mode", "INDEFINITE", "earlyExitChallenge", true),
@@ -111,6 +201,7 @@ class StrictModeViewTest {
                         "warningEndsAt", NOW.plusSeconds(25).toString())),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 () -> {}));
+        FxTestSupport.waitFor(() -> view.lookup("#activeTitle") != null, "warning dashboard");
 
         FxTestSupport.call(() -> {
             assertEquals("Restore the Chrome extension", text(view, "#activeTitle"));
@@ -134,6 +225,7 @@ class StrictModeViewTest {
                         "connectionHealth", "HEALTHY")),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 () -> {}));
+        FxTestSupport.waitFor(() -> view.lookup("#activeTitle") != null, "active dashboard");
 
         FxTestSupport.call(() -> {
             assertEquals("Strict Mode is active", text(view, "#activeTitle"));
@@ -144,7 +236,7 @@ class StrictModeViewTest {
     }
 
     private static StrictModeView idleView(ArrayList<ProtocolMessage> starts) {
-        return FxTestSupport.call(() -> new StrictModeView(
+        var view = FxTestSupport.call(() -> new StrictModeView(
                 new ServiceClient(SECRET, request -> {
                     if (request.type().equals("dashboard.start")) {
                         starts.add(request);
@@ -167,11 +259,18 @@ class StrictModeViewTest {
                 }),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 () -> {}));
+        FxTestSupport.waitFor(
+                () -> view.lookup("#durationMinutes") != null, "initial idle dashboard");
+        return view;
     }
 
     private static ServiceClient statusClient(Map<String, Object> payload) {
         return new ServiceClient(
                 SECRET, request -> new ProtocolMessage(1, SECRET, "service.status", payload));
+    }
+
+    private static ProtocolMessage inactiveStatus() {
+        return new ProtocolMessage(1, SECRET, "service.status", Map.of("active", false));
     }
 
     private static String feedback(StrictModeView view) {
