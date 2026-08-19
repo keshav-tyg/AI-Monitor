@@ -154,17 +154,25 @@ cleanup_temporaries() {
 }
 trap cleanup_temporaries EXIT HUP INT TERM
 
-cp "$installer_directory/com.localfocuscoach.strict-service.plist.template" "$temporary_plist"
-plutil -replace ProgramArguments.0 -string "$service_executable" "$temporary_plist"
-plutil -replace StandardOutPath -string "$logs_directory/strict-service.stdout.log" "$temporary_plist"
-plutil -replace StandardErrorPath -string "$logs_directory/strict-service.stderr.log" "$temporary_plist"
-plutil -lint "$temporary_plist" >/dev/null
-
 json_string() {
     osascript -l JavaScript \
         -e 'function run(args) { return JSON.stringify(args[0]); }' \
         -- "$1"
 }
+
+json_array() {
+    osascript -l JavaScript \
+        -e 'function run(args) { return JSON.stringify(args); }' \
+        -- "$@"
+}
+
+cp "$installer_directory/com.localfocuscoach.strict-service.plist.template" "$temporary_plist"
+plutil -replace ProgramArguments -json \
+    "$(json_array "$service_executable" "$app_image")" \
+    "$temporary_plist"
+plutil -replace StandardOutPath -string "$logs_directory/strict-service.stdout.log" "$temporary_plist"
+plutil -replace StandardErrorPath -string "$logs_directory/strict-service.stderr.log" "$temporary_plist"
+plutil -lint "$temporary_plist" >/dev/null
 
 sed_replacement() {
     sed 's/[\\&|]/\\&/g'

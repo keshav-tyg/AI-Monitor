@@ -18,10 +18,13 @@ import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 public final class NativeMessagingRelay {
@@ -33,7 +36,25 @@ public final class NativeMessagingRelay {
     private static final Set<String> SERVICE_FIELDS =
             Set.of("version", "secret", "type", "payload");
     private static final Set<String> NATIVE_SERVICE_RESPONSE_TYPES =
-            Set.of("service.ack", "service.focusSettings");
+            Set.of("service.ack", "service.focusSettings", "service.status");
+    private static final Set<String> ACTIVE_STATUS_REQUIRED_FIELDS = Set.of(
+            "active",
+            "sessionId",
+            "mode",
+            "startedAt",
+            "earlyExitChallenge",
+            "status",
+            "connectionHealth");
+    private static final Set<String> ACTIVE_STATUS_FIELDS = Set.of(
+            "active",
+            "sessionId",
+            "mode",
+            "startedAt",
+            "earlyExitChallenge",
+            "status",
+            "connectionHealth",
+            "endsAt",
+            "warningEndsAt");
     private static final Set<String> FOCUS_SETTINGS_FIELDS = Set.of("enabled", "rules");
     private static final Set<String> FOCUS_RULE_FIELDS = Set.of(
             "enabled", "doomscrollBudgetMinutes", "warningScore", "gracePeriodSeconds", "interventions");
@@ -218,8 +239,53 @@ public final class NativeMessagingRelay {
         return switch (type) {
             case "service.ack" -> payload.size() == 0;
             case "service.focusSettings" -> validFocusSettingsResponsePayload(payload);
+            case "service.status" -> validServiceStatusPayload(payload);
             default -> false;
         };
+    }
+
+    private boolean validServiceStatusPayload(JsonNode payload) {
+        if (hasExactFields(payload, Set.of("active"))) {
+            return payload.path("active").isBoolean() && !payload.path("active").booleanValue();
+        }
+        var actualFields = new HashSet<String>();
+        payload.fieldNames().forEachRemaining(actualFields::add);
+        if (!actualFields.containsAll(ACTIVE_STATUS_REQUIRED_FIELDS)
+                || !ACTIVE_STATUS_FIELDS.containsAll(actualFields)
+                || !payload.path("active").isBoolean()
+                || !payload.path("active").booleanValue()
+                || !payload.path("sessionId").isTextual()
+                || !payload.path("mode").isTextual()
+                || !Set.of("TIMED", "INDEFINITE").contains(payload.path("mode").textValue())
+                || !payload.path("startedAt").isTextual()
+                || !payload.path("earlyExitChallenge").isBoolean()
+                || !payload.path("status").isTextual()
+                || !"ACTIVE".equals(payload.path("status").textValue())
+                || !payload.path("connectionHealth").isTextual()
+                || !Set.of("HEALTHY", "DISCONNECTED")
+                        .contains(payload.path("connectionHealth").textValue())
+                || ("TIMED".equals(payload.path("mode").textValue()) != payload.has("endsAt"))) {
+            return false;
+        }
+        try {
+            UUID.fromString(payload.path("sessionId").textValue());
+            Instant.parse(payload.path("startedAt").textValue());
+            if (payload.has("endsAt")) {
+                if (!payload.path("endsAt").isTextual()) {
+                    return false;
+                }
+                Instant.parse(payload.path("endsAt").textValue());
+            }
+            if (payload.has("warningEndsAt")) {
+                if (!payload.path("warningEndsAt").isTextual()) {
+                    return false;
+                }
+                Instant.parse(payload.path("warningEndsAt").textValue());
+            }
+            return true;
+        } catch (IllegalArgumentException | DateTimeParseException exception) {
+            return false;
+        }
     }
 
     private boolean validFocusSettingsResponsePayload(JsonNode payload) {

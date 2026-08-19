@@ -21,6 +21,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.util.Duration;
 import org.junit.jupiter.api.Test;
 
 class FocusRulesViewTest {
@@ -234,23 +235,45 @@ class FocusRulesViewTest {
     }
 
     @Test
-    void rendersWaitingUntilChromeAcknowledgesTheCurrentRevision() {
-        var response = new AtomicReference<>(focusSettingsResponse(3L, 2L));
-        var client = new ServiceClient(SECRET, request -> response.get());
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+    void pollsWaitingRevisionUntilChromeAcknowledgesIt() throws Exception {
+        var requestNumber = new AtomicInteger();
+        var pollStarted = new CountDownLatch(1);
+        var releasePoll = new CountDownLatch(1);
+        var client = new ServiceClient(SECRET, request -> {
+            if (requestNumber.incrementAndGet() == 1) {
+                return focusSettingsResponse(3L, 2L);
+            }
+            pollStarted.countDown();
+            await(releasePoll);
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = FxTestSupport.call(
+                () -> new FocusRulesView(client, () -> {}, Duration.millis(10)));
         try {
             FxTestSupport.waitFor(
                     () -> "Waiting for Chrome".equals(text(view, "#chromeSyncStatus")),
                     "pending Chrome sync");
-
-            response.set(focusSettingsResponse(3L, 3L));
-            FxTestSupport.call(() -> {
-                view.refresh();
-                return null;
-            });
+            assertTrue(pollStarted.await(1, TimeUnit.SECONDS));
+            assertEquals(2, requestNumber.get());
+            releasePoll.countDown();
             FxTestSupport.waitFor(
                     () -> "Synced with Chrome".equals(text(view, "#chromeSyncStatus")),
                     "acknowledged Chrome sync");
+            assertEquals(2, requestNumber.get());
+        } finally {
+            releasePoll.countDown();
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void unsavedEditableDefaultsRemainWaitingForARealChromeRevision() {
+        var client = new ServiceClient(
+                SECRET, request -> focusSettingsResponse(0L, 0L, settingsPayload(5)));
+        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        try {
+            waitUntilLoaded(view);
+            assertEquals("Waiting for Chrome", text(view, "#chromeSyncStatus"));
         } finally {
             dispose(view, client);
         }
@@ -372,18 +395,54 @@ class FocusRulesViewTest {
     }
 
     @Test
-    void newerRefreshWinsWhenAnOlderResponseReturnsLast() throws Exception {
+    void disposeStopsPollingAndRejectsAnOutstandingPollCallback() throws Exception {
+        var requestNumber = new AtomicInteger();
+        var pollStarted = new CountDownLatch(1);
+        var releasePoll = new CountDownLatch(1);
+        var client = new ServiceClient(SECRET, request -> {
+            if (requestNumber.incrementAndGet() == 1) {
+                return focusSettingsResponse(3L, 2L);
+            }
+            pollStarted.countDown();
+            await(releasePoll);
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = FxTestSupport.call(
+                () -> new FocusRulesView(client, () -> {}, Duration.millis(10)));
+        try {
+            FxTestSupport.waitFor(
+                    () -> "Waiting for Chrome".equals(text(view, "#chromeSyncStatus")),
+                    "pending Chrome sync");
+            assertTrue(pollStarted.await(1, TimeUnit.SECONDS));
+
+            FxTestSupport.call(() -> {
+                view.dispose();
+                return null;
+            });
+            releasePoll.countDown();
+            FxTestSupport.call(() -> null);
+
+            assertEquals("Waiting for Chrome", text(view, "#chromeSyncStatus"));
+            assertEquals(2, requestNumber.get());
+        } finally {
+            releasePoll.countDown();
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void refreshDoesNotOverlapAnOutstandingSettingsRequest() throws Exception {
         var requestNumber = new AtomicInteger();
         var firstStarted = new CountDownLatch(1);
         var releaseFirst = new CountDownLatch(1);
-        var firstReturned = new CountDownLatch(1);
+        var secondStarted = new CountDownLatch(1);
         var client = new ServiceClient(SECRET, request -> {
             if (requestNumber.incrementAndGet() == 1) {
                 firstStarted.countDown();
                 await(releaseFirst);
-                firstReturned.countDown();
                 return focusSettingsResponse(1L, 1L, settingsPayload(5));
             }
+            secondStarted.countDown();
             return focusSettingsResponse(2L, 2L, settingsPayload(4));
         });
         var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
@@ -393,18 +452,10 @@ class FocusRulesViewTest {
                 view.refresh();
                 return null;
             });
-            FxTestSupport.waitFor(
-                    () -> "4".equals(FxTestSupport.call(
-                            () -> ((TextField) view.lookup("#instagramReelsBudget")).getText())),
-                    "newer Focus Rules refresh");
+            assertFalse(secondStarted.await(100, TimeUnit.MILLISECONDS));
             releaseFirst.countDown();
-            assertTrue(firstReturned.await(1, TimeUnit.SECONDS));
-            FxTestSupport.call(() -> null);
-
-            assertEquals(
-                    "4",
-                    FxTestSupport.call(() -> ((TextField) view.lookup("#instagramReelsBudget"))
-                            .getText()));
+            waitUntilLoaded(view);
+            assertEquals(1, requestNumber.get());
         } finally {
             releaseFirst.countDown();
             dispose(view, client);

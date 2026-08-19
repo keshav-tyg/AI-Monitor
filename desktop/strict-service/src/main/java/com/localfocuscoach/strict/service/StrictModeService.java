@@ -194,9 +194,7 @@ public final class StrictModeService implements AutoCloseable {
         if (!payload.isEmpty()) {
             return authenticatedError("error.invalidRequest");
         }
-        var settings = focusSettingsRepository
-                .load()
-                .orElseGet(() -> focusSettingsRepository.save(DEFAULT_FOCUS_SETTINGS));
+        var settings = focusSettingsRepository.load().orElse(DEFAULT_FOCUS_SETTINGS);
         return focusSettingsResponse(settings);
     }
 

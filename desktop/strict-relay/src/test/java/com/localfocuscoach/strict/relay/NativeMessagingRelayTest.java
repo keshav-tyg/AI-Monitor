@@ -53,6 +53,31 @@ final class NativeMessagingRelayTest {
     }
 
     @Test
+    void activeStrictSessionStatusSurvivesConnectAndHeartbeatWithoutRelayFlapping()
+            throws Exception {
+        var chromeInput = nativeInput(extensionMessage("extension.heartbeat"));
+        var chromeOutput = new ByteArrayOutputStream();
+        var activeStatus = serviceResponse("service.status", activeServiceStatusPayload());
+        var service = serviceWithResponses(activeStatus, activeStatus, activeStatus);
+        var relay = relay(() -> service);
+
+        assertEquals(
+                0,
+                relay.run(
+                        EXPECTED_ORIGIN,
+                        chromeInput,
+                        chromeOutput,
+                        new PrintStream(OutputStream.nullOutputStream())));
+
+        assertEquals(
+                List.of("relay.connected", "relay.heartbeat", "relay.disconnected"),
+                service.requestTypes());
+        assertEquals(
+                List.of("service.status", "service.status"),
+                nativeOutputTypes(chromeOutput));
+    }
+
+    @Test
     void eofReportsExactlyOneDisconnect() throws Exception {
         var chromeOutput = new ByteArrayOutputStream();
         var service = serviceWithResponses(2);
@@ -312,11 +337,14 @@ final class NativeMessagingRelayTest {
     }
 
     @Test
-    void rejectsUnexpectedServiceResponseTypesInsteadOfForwardingThem() throws Exception {
+    void rejectsServiceStatusWithUnexpectedContentInsteadOfForwardingIt() throws Exception {
         var chromeOutput = new ByteArrayOutputStream();
+        var unsafeStatus = activeServiceStatusPayload().deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) unsafeStatus)
+                .put("page", "private content");
         var service = serviceWithResponses(
                 serviceResponse("service.ack", objectMapper.createObjectNode()),
-                serviceResponse("service.status", objectMapper.createObjectNode()),
+                serviceResponse("service.status", unsafeStatus),
                 serviceResponse("service.ack", objectMapper.createObjectNode()));
         var relay = relay(() -> service);
 
@@ -469,6 +497,22 @@ final class NativeMessagingRelayTest {
                     }
                   },
                   "chromeAppliedRevision": 4
+                }
+                """);
+    }
+
+    private JsonNode activeServiceStatusPayload() throws IOException {
+        return objectMapper.readTree(
+                """
+                {
+                  "active": true,
+                  "sessionId": "00000000-0000-0000-0000-000000000001",
+                  "mode": "TIMED",
+                  "startedAt": "2026-08-18T12:00:00Z",
+                  "earlyExitChallenge": false,
+                  "status": "ACTIVE",
+                  "connectionHealth": "HEALTHY",
+                  "endsAt": "2026-08-18T12:05:00Z"
                 }
                 """);
     }

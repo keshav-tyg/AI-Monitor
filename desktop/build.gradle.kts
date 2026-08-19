@@ -41,12 +41,17 @@ val generateServiceBootstrap by tasks.registering {
             import com.localfocuscoach.strict.store.SqliteFocusSettingsRepository;
             import com.localfocuscoach.strict.store.SqliteStrictSessionRepository;
             import java.nio.file.Files;
+            import java.nio.file.Path;
             import java.time.Clock;
 
             public final class ServiceMain {
                 private ServiceMain() {}
 
                 public static void main(String[] args) throws Exception {
+                    if (args.length != 1) {
+                        throw new IllegalArgumentException(
+                                "Expected the canonical installed app image path");
+                    }
                     var appSupport = InstallSecret.defaultAppSupportDirectory();
                     Files.createDirectories(appSupport);
                     var database = appSupport.resolve("strict-mode.sqlite3");
@@ -57,7 +62,7 @@ val generateServiceBootstrap by tasks.registering {
                             repository,
                             focusSettingsRepository,
                             new MacChromeController(),
-                            new MacDashboardLauncher(),
+                            new MacDashboardLauncher(Path.of(args[0])),
                             new MacRestoreWarningNotifier());
                     var server = new UnixSocketServer(
                             UnixSocketServer.defaultSocketPath(),

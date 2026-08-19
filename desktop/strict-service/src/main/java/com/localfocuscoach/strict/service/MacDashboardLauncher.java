@@ -2,6 +2,8 @@ package com.localfocuscoach.strict.service;
 
 import java.io.IOException;
 import java.lang.ProcessBuilder.Redirect;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -9,15 +11,14 @@ import java.util.concurrent.TimeUnit;
 
 /** Opens only the packaged Local Focus Coach application through the macOS app launcher. */
 public final class MacDashboardLauncher implements DashboardLauncher {
-    private static final List<String> OPEN_COMMAND =
-            List.of("open", "-a", "Local Focus Coach");
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration TERMINATION_TIMEOUT = Duration.ofMillis(250);
 
+    private final List<String> openCommand;
     private final CommandRunner runner;
 
-    public MacDashboardLauncher() {
-        this(new ProcessCommandRunner(
+    public MacDashboardLauncher(Path installedAppImage) {
+        this(installedAppImage, new ProcessCommandRunner(
                 command -> new ProcessBuilder(command)
                         .redirectInput(Redirect.from(ProcessBuilder.Redirect.DISCARD.file()))
                         .redirectOutput(Redirect.DISCARD)
@@ -27,18 +28,35 @@ public final class MacDashboardLauncher implements DashboardLauncher {
                 TERMINATION_TIMEOUT));
     }
 
-    public MacDashboardLauncher(CommandRunner runner) {
+    MacDashboardLauncher(Path installedAppImage, CommandRunner runner) {
+        openCommand = List.of("open", canonicalInstalledAppImage(installedAppImage).toString());
         this.runner = Objects.requireNonNull(runner);
     }
 
     @Override
     public void open() {
         try {
-            runner.run(OPEN_COMMAND);
+            runner.run(openCommand);
         } catch (IOException exception) {
             // A failed app launch does not broaden the request or stop the local service.
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private static Path canonicalInstalledAppImage(Path installedAppImage) {
+        Objects.requireNonNull(installedAppImage);
+        if (!installedAppImage.isAbsolute()) {
+            throw new IllegalArgumentException("Installed app image path must be absolute");
+        }
+        try {
+            var canonical = installedAppImage.toRealPath();
+            if (!Files.isDirectory(canonical)) {
+                throw new IllegalArgumentException("Installed app image must be a directory");
+            }
+            return canonical;
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Installed app image is unavailable", exception);
         }
     }
 
