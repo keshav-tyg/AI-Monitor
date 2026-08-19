@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import javafx.animation.PauseTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -21,45 +22,90 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 
 public final class FocusRulesView extends BorderPane {
+    private static final Duration CHROME_SYNC_POLL_INTERVAL = Duration.seconds(1);
+
     private final ServiceClient client;
     private final Runnable showStrictMode;
+    private final PauseTransition chromeSyncPoll;
     private final CheckBox protectionEnabled = new CheckBox("Protection enabled");
     private final Label feedback = new Label("Loading Focus Rules…");
     private final Label chromeSyncStatus = new Label();
     private final Button save = new Button("Save Focus Rules");
     private final EnumMap<FocusSite, RuleControls> rules = new EnumMap<>(FocusSite.class);
     private boolean disposed;
+    private boolean chromeSyncPending;
+    private boolean refreshInFlight;
     private boolean saveInFlight;
     private long draftGeneration;
     private long responseGeneration;
 
     public FocusRulesView(ServiceClient client, Runnable showStrictMode) {
+        this(client, showStrictMode, CHROME_SYNC_POLL_INTERVAL);
+    }
+
+    FocusRulesView(ServiceClient client, Runnable showStrictMode, Duration chromeSyncPollInterval) {
         this.client = Objects.requireNonNull(client);
         this.showStrictMode = Objects.requireNonNull(showStrictMode);
+        Objects.requireNonNull(chromeSyncPollInterval);
+        if (chromeSyncPollInterval.lessThanOrEqualTo(Duration.ZERO)) {
+            throw new IllegalArgumentException("Chrome sync poll interval must be positive");
+        }
+        chromeSyncPoll = new PauseTransition(chromeSyncPollInterval);
+        chromeSyncPoll.setOnFinished(event -> pollChromeSyncStatus());
         setStyle("-fx-background-color: #f7f7f4;");
         render();
         refresh();
     }
 
     public void refresh() {
-        if (disposed || saveInFlight) {
+        requestSnapshot(false);
+    }
+
+    private void pollChromeSyncStatus() {
+        requestSnapshot(true);
+    }
+
+    private void requestSnapshot(boolean statusOnly) {
+        if (disposed || refreshInFlight || saveInFlight) {
+            if (statusOnly && !disposed) {
+                scheduleChromeSyncPoll();
+            }
             return;
         }
+        refreshInFlight = true;
         var generation = ++responseGeneration;
         client.getFocusSettingsAsync((response, failure) -> {
-            if (disposed || generation != responseGeneration) {
+            if (disposed) {
+                return;
+            }
+            refreshInFlight = false;
+            if (generation != responseGeneration) {
                 return;
             }
             if (failure != null || response == null || !"service.focusSettings".equals(response.type())) {
-                feedback.setText("Could not load Focus Rules");
+                if (statusOnly) {
+                    scheduleChromeSyncPoll();
+                } else {
+                    feedback.setText("Could not load Focus Rules");
+                }
                 return;
             }
             try {
-                renderSnapshot(response.payload());
+                var snapshot = parseSnapshot(response.payload());
+                if (statusOnly) {
+                    renderChromeSyncStatus(snapshot);
+                } else {
+                    renderSnapshot(snapshot);
+                }
             } catch (IllegalArgumentException exception) {
-                feedback.setText("Could not load Focus Rules");
+                if (statusOnly) {
+                    scheduleChromeSyncPoll();
+                } else {
+                    feedback.setText("Could not load Focus Rules");
+                }
             }
         });
     }
@@ -67,6 +113,7 @@ public final class FocusRulesView extends BorderPane {
     public void dispose() {
         disposed = true;
         responseGeneration++;
+        chromeSyncPoll.stop();
     }
 
     private void render() {
@@ -186,9 +233,21 @@ public final class FocusRulesView extends BorderPane {
     }
 
     private void renderChromeSyncStatus(FocusSettingsSnapshot snapshot) {
-        chromeSyncStatus.setText(snapshot.chromeRevision() == snapshot.settings().revision()
-                ? "Synced with Chrome"
-                : "Waiting for Chrome");
+        var synced = snapshot.settings().revision() > 0
+                && snapshot.chromeRevision() == snapshot.settings().revision();
+        chromeSyncPending = !synced;
+        chromeSyncStatus.setText(synced ? "Synced with Chrome" : "Waiting for Chrome");
+        if (synced) {
+            chromeSyncPoll.stop();
+        } else {
+            scheduleChromeSyncPoll();
+        }
+    }
+
+    private void scheduleChromeSyncPoll() {
+        if (!disposed && chromeSyncPending) {
+            chromeSyncPoll.playFromStart();
+        }
     }
 
     private void save() {
@@ -238,6 +297,7 @@ public final class FocusRulesView extends BorderPane {
         payload.remove("revision");
         var submittedDraftGeneration = draftGeneration;
         saveInFlight = true;
+        chromeSyncPoll.stop();
         setFormDisabled(true);
         feedback.setText("Saving Focus Rules…");
         var generation = ++responseGeneration;
@@ -249,15 +309,18 @@ public final class FocusRulesView extends BorderPane {
             setFormDisabled(false);
             if (failure != null || response == null) {
                 feedback.setText("Could not save Focus Rules");
+                scheduleChromeSyncPoll();
                 return;
             }
             if ("error.focusSettingsWeakening".equals(response.type())) {
                 feedback.setText(
                         "Strict Mode is active, so settings cannot be made less protective.");
+                scheduleChromeSyncPoll();
                 return;
             }
             if (!"service.focusSettings".equals(response.type())) {
                 feedback.setText("Could not save Focus Rules");
+                scheduleChromeSyncPoll();
                 return;
             }
             try {
@@ -270,6 +333,7 @@ public final class FocusRulesView extends BorderPane {
                 feedback.setText("Focus Rules saved");
             } catch (IllegalArgumentException exception) {
                 feedback.setText("Could not save Focus Rules");
+                scheduleChromeSyncPoll();
             }
         });
     }

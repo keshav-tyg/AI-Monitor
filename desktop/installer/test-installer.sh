@@ -119,6 +119,9 @@ expect_equal "com.localfocuscoach.strict-service" \
 expect_equal "$canonical_app_image/Contents/MacOS/Local Focus Coach Service" \
     "$(plutil -extract ProgramArguments.0 raw -o - "$plist")" \
     "LaunchAgent executable"
+expect_equal "$canonical_app_image" \
+    "$(plutil -extract ProgramArguments.1 raw -o - "$plist")" \
+    "LaunchAgent packaged application path"
 expect_equal "true" \
     "$(plutil -extract RunAtLoad raw -o - "$plist")" \
     "LaunchAgent RunAtLoad"

@@ -21,6 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -180,7 +181,8 @@ class StrictModeServiceTest {
     }
 
     @Test
-    void dashboardGetInitializesAndPersistsTheSafeDefaults(@TempDir Path directory) {
+    void dashboardGetShowsEditableDefaultsWithoutConsumingLaterLegacyImport(
+            @TempDir Path directory) {
         var settingsRepository = settingsRepository(directory);
         service = new StrictModeService(
                 SECRET,
@@ -193,11 +195,16 @@ class StrictModeServiceTest {
                 message(SECRET, "dashboard.focusSettings.get"), NOW);
 
         assertEquals("service.focusSettings", response.type());
-        assertEquals(1L, response.payload().get("revision"));
+        assertEquals(0L, response.payload().get("revision"));
         assertEquals(defaultSettingsPayload(), response.payload().get("settings"));
-        assertEquals(
-                defaultSettingsPayload(),
-                settingsWithoutRevision(settingsRepository.load().orElseThrow()));
+        assertTrue(settingsRepository.load().isEmpty());
+
+        var imported = sync(0L, settingsPayload(4));
+
+        assertEquals("service.focusSettings", imported.type());
+        assertEquals(1L, imported.payload().get("revision"));
+        assertEquals(settingsPayload(4), imported.payload().get("settings"));
+        assertEquals(4, savedBudget(settingsRepository.load().orElseThrow()));
     }
 
     @Test
@@ -404,23 +411,31 @@ class StrictModeServiceTest {
     }
 
     @Test
-    void macDashboardLauncherUsesOnlyTheFixedPackagedApplicationName() {
+    void macDashboardLauncherUsesTheCanonicalInstalledApplicationPath(@TempDir Path directory)
+            throws Exception {
+        var installedApp = directory.resolve("installed/Local Focus Coach.app");
+        Files.createDirectories(installedApp);
+        var linkedApp = directory.resolve("registered.app");
+        Files.createSymbolicLink(linkedApp, installedApp);
         var runner = new CapturingDashboardCommandRunner(0);
-        var launcher = new MacDashboardLauncher(runner);
+        var launcher = new MacDashboardLauncher(linkedApp, runner);
 
         launcher.open();
 
         assertEquals(
-                List.of(List.of("open", "-a", "Local Focus Coach")),
+                List.of(List.of("open", installedApp.toRealPath().toString())),
                 runner.commands);
     }
 
     @Test
-    void macDashboardLauncherTerminatesOnlyItsTimedOutChild() {
+    void macDashboardLauncherTerminatesOnlyItsTimedOutChild(@TempDir Path directory)
+            throws Exception {
+        var installedApp = directory.resolve("Local Focus Coach.app");
+        Files.createDirectories(installedApp);
         var process = new TimedDashboardProcess(false);
         var runner = new MacDashboardLauncher.ProcessCommandRunner(
                 command -> process, Duration.ZERO, Duration.ZERO);
-        var launcher = new MacDashboardLauncher(runner);
+        var launcher = new MacDashboardLauncher(installedApp, runner);
 
         assertDoesNotThrow(launcher::open);
 
