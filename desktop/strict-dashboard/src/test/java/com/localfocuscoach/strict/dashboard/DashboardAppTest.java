@@ -1,5 +1,6 @@
 package com.localfocuscoach.strict.dashboard;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -8,10 +9,31 @@ import java.util.List;
 import java.util.Map;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.paint.Color;
 import org.junit.jupiter.api.Test;
 
 class DashboardAppTest {
     private static final String SECRET = "dashboard-test-secret";
+
+    @Test
+    void appliesAnExplicitReadableLightThemeRegardlessOfTheMacAppearance() {
+        var client = client(false);
+        var dashboard = FxTestSupport.call(() -> {
+            var view = new DashboardApp.DashboardView(client);
+            new Scene(view, 760, 580);
+            view.applyCss();
+            return view;
+        });
+        try {
+            FxTestSupport.call(() -> {
+                assertEquals(Color.web("#1f2937"), ((Label) dashboard.lookup(".label")).getTextFill());
+                return null;
+            });
+        } finally {
+            dispose(dashboard, client);
+        }
+    }
 
     @Test
     void landsOnFocusRulesAndNavigatesClearlyBetweenBothDashboardSections() {

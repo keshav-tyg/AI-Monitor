@@ -55,7 +55,10 @@ public final class DashboardApp {
 
         DashboardView(ServiceClient client) {
             this.client = Objects.requireNonNull(client);
-            setStyle("-fx-background-color: #f7f7f4;");
+            getStyleClass().add("dashboard");
+            var stylesheet = Objects.requireNonNull(
+                    DashboardApp.class.getResource("dashboard.css"), "Missing dashboard stylesheet");
+            getStylesheets().add(stylesheet.toExternalForm());
             configureNavigation();
             showFocusRules();
         }
