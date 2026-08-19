@@ -212,9 +212,90 @@ assuming you stopped scrolling.
 
 ## Scope
 
-macOS Chrome only. This is a prototype: no mobile app, no desktop app, no
-account, no cloud sync, no usage reporting of any kind, and no support for
-feeds beyond the three listed above.
+macOS Chrome only. This is a prototype: no mobile app, no account, no cloud
+sync, no usage reporting of any kind, and no support for feeds beyond the three
+listed above. The optional desktop companion is only for Strict Mode.
+
+## Optional Strict Mode companion
+
+Strict Mode is an optional, local macOS companion for an active Chrome session.
+It is supported only with Google Chrome on macOS. The extension, its Native
+Messaging relay, and the companion service communicate only on this computer;
+session data and the installation secret are stored locally. There is no
+account, cloud service, remote control, or cross-device synchronization.
+
+Strict Mode is deliberately **not tamper-proof**. A person who controls the
+Mac can disable software, alter or remove registrations, or otherwise bypass
+it. The companion does not claim to prevent that. Its purpose is to make an
+opt-in commitment more deliberate, while preserving a local, user-controlled
+setup.
+
+### Install in this order
+
+Do these steps in order. A release build needs the base64 DER public key that
+belongs to the production extension identity. Keep the corresponding private
+key in protected release infrastructure; do not put it in this repository or
+pass it to these build scripts. The public key is the remaining release input
+and is safe to embed in the extension manifest.
+
+1. Build the production extension. The build validates the public key, embeds
+   it as the manifest `key`, derives the stable 32-letter Chrome ID, and writes
+   `dist/production-extension-identity.json`:
+
+   ```sh
+   LFC_EXTENSION_PUBLIC_KEY='<base64 DER SubjectPublicKeyInfo>' \
+     npm run build:production
+   ```
+
+   A plain `npm run build` is deliberately a development build. It has no
+   manifest key, its unpacked ID is not promised to be stable across machines,
+   and it connects only to `com.localfocuscoach.strict_mode_dev`.
+2. Load `dist/` in `chrome://extensions`. For a release, confirm Chrome shows
+   the ID recorded in `dist/production-extension-identity.json`.
+3. Package the macOS app image from `desktop/` with Java 21:
+
+   ```sh
+   JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home" \
+     ./gradlew jpackage
+   ```
+
+4. Move or copy `desktop/build/jpackage/Local Focus Coach.app` to its permanent
+   location. Do not move it after the next step.
+5. Install the user-level LaunchAgent and Chrome Native Messaging registration:
+
+   ```sh
+   cd desktop
+   ./installer/install-local-focus-coach.sh \
+     --app-image "/absolute/path/Local Focus Coach.app" \
+     --production-identity-file ../dist/production-extension-identity.json
+   ```
+
+   This needs no administrator access. It installs only
+   `~/Library/LaunchAgents/com.localfocuscoach.strict-service.plist` and
+   `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode.json`.
+   The LaunchAgent starts the local service at login and restarts it after an
+   unexpected exit.
+   For local development, use
+   `--development-extension-id <copied-unpacked-id>` instead. That writes only
+   the `_dev` host configuration; a raw development ID cannot enter the
+   production allowlist.
+6. Launch the dashboard from the app image, confirm that it can see the local
+   service, then enable Strict Mode from the dashboard.
+
+When an active session loses its extension connection while Google Chrome is
+running, the service presents a local macOS warning even if the dashboard is
+closed; the dashboard also shows the 30-second countdown when open. Re-enable
+the extension before that deadline to cancel the warning. If it expires, the
+companion asks Chrome to quit gracefully; it does not force-kill Chrome. A
+closed Chrome instance does not start a warning, and reopening Chrome without
+the extension starts a fresh warning cycle while the session remains active.
+
+For the full real-machine acceptance procedure, see
+[`desktop/docs/manual-strict-mode-checklist.md`](desktop/docs/manual-strict-mode-checklist.md).
+Use the installer’s ownership-safe uninstall command when removing the
+registrations. It deletes only unchanged registrations it created, and leaves
+the app image, local session data, secret, logs, and unrelated registrations in
+place.
 
 ## Development
 
