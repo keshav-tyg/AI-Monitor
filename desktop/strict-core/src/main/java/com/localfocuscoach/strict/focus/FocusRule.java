@@ -22,6 +22,9 @@ public record FocusRule(
             throw new IllegalArgumentException("Grace period must be 0 to 600 seconds");
         }
         interventions = List.copyOf(Objects.requireNonNull(interventions, "interventions"));
+        if (enabled && interventions.isEmpty()) {
+            throw new IllegalArgumentException("Enabled focus rules need an intervention");
+        }
         if (new HashSet<>(interventions).size() != interventions.size()) {
             throw new IllegalArgumentException("Focus interventions must be unique");
         }
