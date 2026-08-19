@@ -99,7 +99,7 @@ export async function renderPopup(
   root.append(element('h1', 'Local Focus Coach'));
 
   if (!status || !status.ok || status.type !== 'status') {
-    root.append(element('p', 'Status unavailable. Open Options to review your rules.'));
+    root.append(element('p', 'Status unavailable. Open Local Focus Coach to review your rules.'));
     return;
   }
 

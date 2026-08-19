@@ -4,7 +4,7 @@ import {
   resetSessions,
   routeForTest,
 } from '../src/background/service-worker';
-import { resetNativeBridgeForTest } from '../src/background/native-bridge';
+import { resetNativeBridgeForTest, startNativeBridge } from '../src/background/native-bridge';
 import { DEFAULT_SETTINGS } from '../src/shared/constants';
 import type { InterventionKind } from '../src/shared/types';
 import {
@@ -60,6 +60,38 @@ it('does not expose a browser-owned settings save route', async () => {
   await expect(
     routeForTest({ type: 'save-settings', settings: DEFAULT_SETTINGS } as never, undefined),
   ).resolves.toEqual({ ok: false, error: 'Unknown request' });
+});
+
+it('forwards only the exact empty desktop-open request to the native bridge', async () => {
+  resetNativeBridgeForTest();
+  const spies = installChromeApiSpies();
+  installChromeStorageStub();
+  startNativeBridge();
+
+  await expect(
+    routeForTest({ type: 'open-dashboard', payload: {} } as never, undefined),
+  ).resolves.toEqual({ ok: true, type: 'ack' });
+  expect(spies.nativePorts[0]?.postMessage).toHaveBeenCalledWith({
+    version: 1,
+    type: 'extension.openDashboard',
+    payload: {},
+  });
+
+  await expect(routeForTest({ type: 'open-dashboard' } as never, undefined)).resolves.toEqual({
+    ok: false,
+    error: 'Unknown request',
+  });
+  await expect(
+    routeForTest({ type: 'open-dashboard', payload: { unexpected: true } } as never, undefined),
+  ).resolves.toEqual({ ok: false, error: 'Unknown request' });
+  await expect(
+    routeForTest({ type: 'extension.openDashboard', payload: {} } as never, undefined),
+  ).resolves.toEqual({ ok: false, error: 'Unknown request' });
+
+  const openRequests = spies.nativePorts[0]?.postMessage.mock.calls.filter(
+    ([message]) => (message as { type?: string }).type === 'extension.openDashboard',
+  );
+  expect(openRequests).toHaveLength(1);
 });
 
 it('does not enforce when a page event is unsupported or the rule is disabled', async () => {

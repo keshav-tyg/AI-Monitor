@@ -10,95 +10,53 @@ body {
 }
 
 main {
-  max-width: 720px;
+  max-width: 640px;
   margin: 0 auto;
 }
 
 h1 {
   font-size: 24px;
-  margin-bottom: 8px;
+  margin: 0 0 8px;
 }
 
 h2 {
   font-size: 17px;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
+}
+
+.privacy,
+.managed,
+.unavailable {
+  border-radius: 10px;
+  font-size: 14px;
 }
 
 .privacy {
+  margin: 0 0 20px;
   padding: 12px 16px;
-  border-radius: 10px;
   background: rgba(127, 127, 127, 0.14);
-  font-size: 14px;
 }
 
-section[data-site-rule] {
-  margin: 20px 0;
+.managed {
   padding: 20px;
   border: 1px solid rgba(127, 127, 127, 0.35);
-  border-radius: 12px;
 }
 
-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 0;
-  font-size: 14px;
-}
-
-label span {
-  min-width: 200px;
-}
-
-input[type='number'] {
-  width: 90px;
-  padding: 4px 8px;
-}
-
-fieldset {
-  margin: 14px 0;
-  padding: 12px 16px;
-  border: 1px solid rgba(127, 127, 127, 0.3);
-  border-radius: 10px;
-}
-
-fieldset label span {
-  min-width: 180px;
-}
-
-.summary {
-  margin: 12px 0 0;
-  font-size: 13px;
-  opacity: 0.85;
-}
-
-.error {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: #b3261e;
+.managed p {
+  margin: 0 0 16px;
 }
 
 button {
   padding: 9px 16px;
-  border-radius: 8px;
   border: 1px solid rgba(127, 127, 127, 0.5);
+  border-radius: 8px;
   background: transparent;
   color: inherit;
   cursor: pointer;
   font-size: 14px;
 }
 
-ul {
-  padding-left: 18px;
-  font-size: 13px;
-}
-
-li {
-  margin-bottom: 8px;
-}
-
-li button {
-  margin-left: 8px;
-  padding: 3px 10px;
-  font-size: 12px;
+.unavailable {
+  margin: 16px 0 0;
+  color: rgba(127, 127, 127, 1);
 }
