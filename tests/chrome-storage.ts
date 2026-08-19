@@ -55,6 +55,50 @@ export interface ChromeApiSpies {
   updateDynamicRules: ReturnType<typeof vi.fn>;
   alarmsCreate: ReturnType<typeof vi.fn>;
   alarmsClear: ReturnType<typeof vi.fn>;
+  connectNative: ReturnType<typeof vi.fn>;
+  nativePorts: FakeNativePort[];
+}
+
+type NativeMessageListener = (message: unknown) => void;
+type NativeDisconnectListener = () => void;
+
+export interface FakeNativePort {
+  postMessage: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  onMessage: {
+    addListener: ReturnType<typeof vi.fn>;
+    removeListener: ReturnType<typeof vi.fn>;
+  };
+  onDisconnect: {
+    addListener: ReturnType<typeof vi.fn>;
+    removeListener: ReturnType<typeof vi.fn>;
+  };
+  emitMessage(message: unknown): void;
+  emitDisconnect(): void;
+}
+
+function createFakeNativePort(): FakeNativePort {
+  const messageListeners = new Set<NativeMessageListener>();
+  const disconnectListeners = new Set<NativeDisconnectListener>();
+
+  return {
+    postMessage: vi.fn(),
+    disconnect: vi.fn(),
+    onMessage: {
+      addListener: vi.fn((listener: NativeMessageListener) => messageListeners.add(listener)),
+      removeListener: vi.fn((listener: NativeMessageListener) => messageListeners.delete(listener)),
+    },
+    onDisconnect: {
+      addListener: vi.fn((listener: NativeDisconnectListener) => disconnectListeners.add(listener)),
+      removeListener: vi.fn((listener: NativeDisconnectListener) => disconnectListeners.delete(listener)),
+    },
+    emitMessage(message: unknown): void {
+      for (const listener of messageListeners) listener(message);
+    },
+    emitDisconnect(): void {
+      for (const listener of disconnectListeners) listener();
+    },
+  };
 }
 
 /**
@@ -62,6 +106,7 @@ export interface ChromeApiSpies {
  * suite can assert that a fail-open path touched none of them.
  */
 export function installChromeApiSpies(): ChromeApiSpies {
+  const nativePorts: FakeNativePort[] = [];
   const spies: ChromeApiSpies = {
     tabsRemove: vi.fn(async () => undefined),
     tabsSendMessage: vi.fn(async () => undefined),
@@ -70,6 +115,12 @@ export function installChromeApiSpies(): ChromeApiSpies {
     updateDynamicRules: vi.fn(async () => undefined),
     alarmsCreate: vi.fn(() => undefined),
     alarmsClear: vi.fn(async () => true),
+    connectNative: vi.fn(() => {
+      const port = createFakeNativePort();
+      nativePorts.push(port);
+      return port as unknown as chrome.runtime.Port;
+    }),
+    nativePorts,
   };
 
   const globalWithChrome = globalThis as unknown as { chrome?: Record<string, unknown> };
@@ -77,7 +128,11 @@ export function installChromeApiSpies(): ChromeApiSpies {
 
   globalWithChrome.chrome = {
     ...existing,
-    runtime: { onMessage: { addListener: vi.fn() }, sendMessage: vi.fn() },
+    runtime: {
+      onMessage: { addListener: vi.fn() },
+      sendMessage: vi.fn(),
+      connectNative: spies.connectNative,
+    },
     tabs: { remove: spies.tabsRemove, sendMessage: spies.tabsSendMessage },
     notifications: { create: spies.notificationsCreate },
     declarativeNetRequest: {

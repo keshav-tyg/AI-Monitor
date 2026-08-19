@@ -8,6 +8,7 @@ describe('manifest privacy boundary', () => {
     // wakes the worker to clear the rule.
     expect(manifest.permissions).toEqual([
       'storage', 'tabs', 'declarativeNetRequest', 'notifications', 'alarms', 'offscreen',
+      'nativeMessaging',
     ]);
     expect(manifest.host_permissions).toEqual([
       '*://*.instagram.com/*', '*://x.com/*', '*://twitter.com/*', '*://*.youtube.com/*',
