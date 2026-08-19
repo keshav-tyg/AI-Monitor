@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.protocol.ProtocolCodec;
@@ -22,6 +23,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Set;
@@ -220,6 +222,25 @@ class UnixSocketServerTest {
                                 codec.encode(new com.localfocuscoach.strict.protocol.ProtocolMessage(
                                         1, SECRET, "dashboard.status", java.util.Map.of()))))
                         .type());
+    }
+
+    @Test
+    void awaitTerminationReturnsAfterUnexpectedAcceptLoopShutdown(@TempDir Path directory)
+            throws Exception {
+        var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
+        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        var socket = directory.resolve("run").resolve("strict-mode.sock");
+        server = new UnixSocketServer(
+                socket, new ProtocolCodec(), service, Clock.fixed(NOW, ZoneOffset.UTC));
+        server.start();
+        var acceptThreadField = UnixSocketServer.class.getDeclaredField("acceptThread");
+        acceptThreadField.setAccessible(true);
+        var acceptThread = (Thread) acceptThreadField.get(server);
+
+        acceptThread.interrupt();
+
+        assertTimeoutPreemptively(Duration.ofSeconds(2), server::awaitTermination);
+        assertFalse(Files.exists(socket));
     }
 
     private String request(Path socket, String frame) throws Exception {

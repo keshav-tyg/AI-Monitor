@@ -41,7 +41,6 @@ val generateServiceBootstrap by tasks.registering {
             import com.localfocuscoach.strict.store.SqliteStrictSessionRepository;
             import java.nio.file.Files;
             import java.time.Clock;
-            import java.util.concurrent.CountDownLatch;
 
             public final class ServiceMain {
                 private ServiceMain() {}
@@ -63,8 +62,13 @@ val generateServiceBootstrap by tasks.registering {
                                 server.close();
                                 service.close();
                             }));
-                    server.start();
-                    new CountDownLatch(1).await();
+                    try {
+                        server.start();
+                        server.awaitTermination();
+                    } finally {
+                        server.close();
+                        service.close();
+                    }
                 }
             }
             """.trimIndent() + "\n"

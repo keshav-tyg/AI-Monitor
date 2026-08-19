@@ -110,8 +110,20 @@ chmod 700 "$app_support_directory" "$logs_directory"
 temporary_plist=$(mktemp "$launch_agents_directory/.com.localfocuscoach.strict-service.XXXXXX")
 temporary_manifest=$(mktemp "$native_hosts_directory/.com.localfocuscoach.strict_mode.XXXXXX")
 temporary_receipt=$(mktemp "$app_support_directory/.installer-registration-receipt.XXXXXX")
+backup_plist=
+backup_manifest=
+backup_receipt=
 cleanup_temporaries() {
     rm -f "$temporary_plist" "$temporary_manifest" "$temporary_receipt"
+    if [ -n "$backup_plist" ]; then
+        rm -f "$backup_plist"
+    fi
+    if [ -n "$backup_manifest" ]; then
+        rm -f "$backup_manifest"
+    fi
+    if [ -n "$backup_receipt" ]; then
+        rm -f "$backup_receipt"
+    fi
 }
 trap cleanup_temporaries EXIT HUP INT TERM
 
@@ -151,12 +163,36 @@ chmod 600 "$temporary_receipt"
 
 user_domain="gui/$(id -u)"
 if [ "$managed_install" = true ]; then
+    backup_plist=$(mktemp "$launch_agents_directory/.com.localfocuscoach.strict-service.backup.XXXXXX")
+    backup_manifest=$(mktemp "$native_hosts_directory/.com.localfocuscoach.strict_mode.backup.XXXXXX")
+    backup_receipt=$(mktemp "$app_support_directory/.installer-registration-receipt.backup.XXXXXX")
+    cp -p "$plist" "$backup_plist"
+    cp -p "$manifest" "$backup_manifest"
+    cp -p "$receipt" "$backup_receipt"
     launchctl bootout "$user_domain" "$plist" >/dev/null 2>&1 || true
 fi
 mv -f "$temporary_plist" "$plist"
 mv -f "$temporary_manifest" "$manifest"
 mv -f "$temporary_receipt" "$receipt"
-launchctl bootstrap "$user_domain" "$plist"
+if ! launchctl bootstrap "$user_domain" "$plist"; then
+    if [ "$managed_install" = true ]; then
+        rollback_ok=true
+        mv -f "$backup_plist" "$plist" || rollback_ok=false
+        mv -f "$backup_manifest" "$manifest" || rollback_ok=false
+        mv -f "$backup_receipt" "$receipt" || rollback_ok=false
+        if [ "$rollback_ok" = true ]; then
+            launchctl bootstrap "$user_domain" "$plist" || rollback_ok=false
+        fi
+        if [ "$rollback_ok" = false ]; then
+            echo "Unable to restore the previous Local Focus Coach LaunchAgent" >&2
+        fi
+    else
+        rm -f "$plist" "$manifest" "$receipt"
+    fi
+    echo "Unable to bootstrap the Local Focus Coach LaunchAgent" >&2
+    exit 1
+fi
 
+cleanup_temporaries
 trap - EXIT HUP INT TERM
 echo "Installed Local Focus Coach registrations for extension $extension_id"

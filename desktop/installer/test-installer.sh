@@ -39,6 +39,7 @@ trap 'rm -rf "$test_root"' EXIT HUP INT TERM
 test_home="$test_root/home"
 mock_bin="$test_root/bin"
 launchctl_log="$test_root/launchctl.log"
+fail_next_bootstrap="$test_root/fail-next-bootstrap"
 app_image="$test_root/Local & \"Focus\" Coach.app"
 mkdir -p "$test_home" "$mock_bin" "$app_image/Contents/MacOS"
 touch "$launchctl_log"
@@ -51,12 +52,17 @@ canonical_app_image=$(CDPATH= cd -- "$app_image" && pwd -P)
 printf '%s\n' \
     '#!/bin/sh' \
     'printf "%s\\n" "$*" >> "$LFC_LAUNCHCTL_LOG"' \
+    'if [ "$1" = bootstrap ] && [ -f "$LFC_FAIL_NEXT_BOOTSTRAP" ]; then' \
+    '    rm -f "$LFC_FAIL_NEXT_BOOTSTRAP"' \
+    '    exit 1' \
+    'fi' \
     >"$mock_bin/launchctl"
 chmod +x "$mock_bin/launchctl"
 
 run_with_test_home() {
     HOME="$test_home" \
         LFC_LAUNCHCTL_LOG="$launchctl_log" \
+        LFC_FAIL_NEXT_BOOTSTRAP="$fail_next_bootstrap" \
         PATH="$mock_bin:$PATH" \
         "$@"
 }
@@ -81,13 +87,21 @@ expect_status 2 run_with_test_home "$install_script" \
 expect_equal "" "$(cat "$launchctl_log")" "Invalid extension ID must not call launchctl"
 
 extension_id=abcdefghijklmnopabcdefghijklmnop
-run_with_test_home "$install_script" \
+touch "$fail_next_bootstrap"
+expect_status 1 run_with_test_home "$install_script" \
     --app-image "$app_image" \
     --extension-id "$extension_id"
 
 plist="$test_home/Library/LaunchAgents/com.localfocuscoach.strict-service.plist"
 manifest="$test_home/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode.json"
 receipt="$test_home/Library/Application Support/Local Focus Coach/.installer-registration-receipt"
+test ! -e "$plist"
+test ! -e "$manifest"
+test ! -e "$receipt"
+
+run_with_test_home "$install_script" \
+    --app-image "$app_image" \
+    --extension-id "$extension_id"
 
 test -f "$plist"
 test -f "$manifest"
@@ -124,6 +138,28 @@ user_id=$(id -u)
 expect_equal "bootstrap gui/$user_id $plist" \
     "$(tail -n 1 "$launchctl_log")" \
     "LaunchAgent bootstrap"
+
+old_plist_hash=$(shasum -a 256 "$plist" | awk '{print $1}')
+old_manifest_hash=$(shasum -a 256 "$manifest" | awk '{print $1}')
+old_receipt_hash=$(shasum -a 256 "$receipt" | awk '{print $1}')
+touch "$fail_next_bootstrap"
+expect_status 1 run_with_test_home "$install_script" \
+    --app-image "$app_image" \
+    --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+expect_equal "$old_plist_hash" \
+    "$(shasum -a 256 "$plist" | awk '{print $1}')" \
+    "Failed reinstall must restore the previous LaunchAgent"
+expect_equal "$old_manifest_hash" \
+    "$(shasum -a 256 "$manifest" | awk '{print $1}')" \
+    "Failed reinstall must restore the previous native host manifest"
+expect_equal "$old_receipt_hash" \
+    "$(shasum -a 256 "$receipt" | awk '{print $1}')" \
+    "Failed reinstall must restore the previous ownership receipt"
+expect_equal "bootout gui/$user_id $plist
+bootstrap gui/$user_id $plist
+bootstrap gui/$user_id $plist" \
+    "$(tail -n 3 "$launchctl_log")" \
+    "Failed reinstall must re-bootstrap the restored LaunchAgent"
 
 touch "$test_home/Library/LaunchAgents/keep-me.plist"
 touch "$(dirname "$manifest")/keep-me.json"
