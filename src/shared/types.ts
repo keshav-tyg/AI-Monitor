@@ -184,6 +184,7 @@ export interface SiteStatus {
 
 export type BackgroundRequest =
   | { type: 'event'; event: NormalizedEvent }
+  | { type: 'open-dashboard'; payload: Record<string, never> }
   | { type: 'get-status' }
   | { type: 'get-interventions' }
   | { type: 'set-feedback'; id: string; feedback: InterventionFeedback }

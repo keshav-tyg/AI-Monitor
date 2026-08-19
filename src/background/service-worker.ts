@@ -47,7 +47,7 @@ import type {
   SiteStatus,
 } from '../shared/types';
 import { classify, resetClassifierClient } from './classifier-client';
-import { startNativeBridge } from './native-bridge';
+import { requestOpenDashboard, startNativeBridge } from './native-bridge';
 
 /** Per-tab scoring state. Never persisted — it dies with the worker. */
 const sessions = new Map<number, SessionState>();
@@ -91,6 +91,18 @@ export function resetSessions(): void {
 
 function isSupportedSite(value: unknown): value is SiteId {
   return typeof value === 'string' && SITE_IDS.includes(value as SiteId);
+}
+
+function isExactOpenDashboardRequest(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const request = value as Record<string, unknown>;
+  if (request.type !== 'open-dashboard' || Object.keys(request).length !== 2) return false;
+
+  const payload = request.payload;
+  return !!payload
+    && typeof payload === 'object'
+    && !Array.isArray(payload)
+    && Object.keys(payload).length === 0;
 }
 
 function ruleIdsFor(siteIndex: number, patternCount: number): number[] {
@@ -572,6 +584,10 @@ async function buildStatus(now: number): Promise<BackgroundResponse> {
 
 async function route(request: BackgroundRequest, tabId: number | undefined): Promise<BackgroundResponse> {
   switch (request.type) {
+    case 'open-dashboard':
+      if (!isExactOpenDashboardRequest(request)) return { ok: false, error: 'Unknown request' };
+      requestOpenDashboard();
+      return { ok: true, type: 'ack' };
     case 'event': {
       if (tabId === undefined) return { ok: false, error: 'No originating tab' };
       await handleEvent(tabId, request.event);

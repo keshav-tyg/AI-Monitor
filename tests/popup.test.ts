@@ -56,3 +56,12 @@ it('does not show a session marker when the feed is inactive', async () => {
   expect(document.body.textContent).toContain('rule active');
   expect(document.body.textContent).not.toContain('in a session now');
 });
+
+it('directs unavailable status to Local Focus Coach instead of Chrome Options', async () => {
+  document.body.innerHTML = '<main id="app"></main>';
+
+  await renderPopup(document.querySelector('#app')!);
+
+  expect(document.body).toHaveTextContent('Open Local Focus Coach to review your rules.');
+  expect(document.body).not.toHaveTextContent('Open Options to review your rules.');
+});
