@@ -87,6 +87,20 @@ public final class UnixSocketServer implements AutoCloseable {
                 .resolve("strict-mode.sock");
     }
 
+    public void awaitTermination() throws InterruptedException {
+        final Thread thread;
+        synchronized (this) {
+            if (acceptThread == null) {
+                throw new IllegalStateException("Socket server has not been started");
+            }
+            thread = acceptThread;
+        }
+        if (thread == Thread.currentThread()) {
+            throw new IllegalStateException("Accept thread cannot await itself");
+        }
+        thread.join();
+    }
+
     private void acceptLoop() {
         while (running) {
             try {
