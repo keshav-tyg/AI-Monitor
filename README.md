@@ -212,9 +212,72 @@ assuming you stopped scrolling.
 
 ## Scope
 
-macOS Chrome only. This is a prototype: no mobile app, no desktop app, no
-account, no cloud sync, no usage reporting of any kind, and no support for
-feeds beyond the three listed above.
+macOS Chrome only. This is a prototype: no mobile app, no account, no cloud
+sync, no usage reporting of any kind, and no support for feeds beyond the three
+listed above. The optional desktop companion is only for Strict Mode.
+
+## Optional Strict Mode companion
+
+Strict Mode is an optional, local macOS companion for an active Chrome session.
+It is supported only with Google Chrome on macOS. The extension, its Native
+Messaging relay, and the companion service communicate only on this computer;
+session data and the installation secret are stored locally. There is no
+account, cloud service, remote control, or cross-device synchronization.
+
+Strict Mode is deliberately **not tamper-proof**. A person who controls the
+Mac can disable software, alter or remove registrations, or otherwise bypass
+it. The companion does not claim to prevent that. Its purpose is to make an
+opt-in commitment more deliberate, while preserving a local, user-controlled
+setup.
+
+### Install in this order
+
+Do these steps in order. The installer needs the stable ID of the already
+loaded extension, and it records the final app-image path in the per-user
+registrations.
+
+1. Build the extension with `npm run build`.
+2. Load the resulting `dist/` folder in `chrome://extensions` and copy its
+   stable 32-letter extension ID. Keep that same loaded extension for the
+   companion registration.
+3. Package the macOS app image from `desktop/` with Java 21:
+
+   ```sh
+   JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home" \
+     ./gradlew jpackage
+   ```
+
+4. Move or copy `desktop/build/jpackage/Local Focus Coach.app` to its permanent
+   location. Do not move it after the next step.
+5. Install the user-level LaunchAgent and Chrome Native Messaging registration:
+
+   ```sh
+   cd desktop
+   ./installer/install-local-focus-coach.sh \
+     --app-image "/absolute/path/Local Focus Coach.app" \
+     --extension-id abcdefghijklmnopabcdefghijklmnop
+   ```
+
+   This needs no administrator access. It installs only
+   `~/Library/LaunchAgents/com.localfocuscoach.strict-service.plist` and
+   `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode.json`.
+   The LaunchAgent starts the local service at login and restarts it after an
+   unexpected exit.
+6. Launch the dashboard from the app image, confirm that it can see the local
+   service, then enable Strict Mode from the dashboard.
+
+When an active session loses its extension connection while Google Chrome is
+running, the dashboard gives a 30-second restoration warning. Re-enable the
+extension before that deadline to cancel the warning. If it expires, the
+companion asks Chrome to quit gracefully; it does not force-kill Chrome. A
+closed Chrome instance does not start a warning.
+
+For the full real-machine acceptance procedure, see
+[`desktop/docs/manual-strict-mode-checklist.md`](desktop/docs/manual-strict-mode-checklist.md).
+Use the installer’s ownership-safe uninstall command when removing the
+registrations. It deletes only unchanged registrations it created, and leaves
+the app image, local session data, secret, logs, and unrelated registrations in
+place.
 
 ## Development
 
