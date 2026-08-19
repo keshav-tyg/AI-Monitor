@@ -34,6 +34,13 @@ public final class NativeMessagingRelay {
             Set.of("version", "secret", "type", "payload");
     private static final Set<String> NATIVE_SERVICE_RESPONSE_TYPES =
             Set.of("service.ack", "service.focusSettings");
+    private static final Set<String> FOCUS_SETTINGS_FIELDS = Set.of("enabled", "rules");
+    private static final Set<String> FOCUS_RULE_FIELDS = Set.of(
+            "enabled", "doomscrollBudgetMinutes", "warningScore", "gracePeriodSeconds", "interventions");
+    private static final Set<String> FOCUS_SITE_NAMES =
+            Set.of("instagram-reels", "x-timeline", "youtube-shorts");
+    private static final Set<String> FOCUS_INTERVENTION_NAMES =
+            Set.of("notify", "pause", "close-tab", "block");
     private static final List<String> NATIVE_HOST_NAMES = List.of(
             "com.localfocuscoach.strict_mode", "com.localfocuscoach.strict_mode_dev");
 
@@ -114,9 +121,16 @@ public final class NativeMessagingRelay {
                 switch (request.type()) {
                     case "extension.heartbeat" ->
                             writeNativeResponse(nativeOutput, exchange(service, "relay.heartbeat"));
-                    case "extension.focusSettings.sync" -> writeNativeResponse(
-                            nativeOutput,
-                            exchange(service, "relay.focusSettings.sync", request.payload()));
+                    case "extension.focusSettings.sync" -> {
+                        try {
+                            writeNativeResponse(
+                                    nativeOutput,
+                                    exchange(service, "relay.focusSettings.sync", request.payload()));
+                        } catch (OversizedServiceFrameException exception) {
+                            diagnostics.println("Rejected oversized extension settings sync message");
+                            writeError(nativeOutput, diagnostics, "invalidMessage");
+                        }
+                    }
                     case "extension.openDashboard" -> writeNativeResponse(
                             nativeOutput,
                             exchange(service, "relay.focusSettings.openDashboard"));
@@ -142,15 +156,24 @@ public final class NativeMessagingRelay {
 
     private JsonNode exchange(ServiceConnection service, String type, JsonNode payload)
             throws IOException {
+        var requestBytes = serviceRequestBytes(type, payload);
+        service.output().write(requestBytes);
+        service.output().write('\n');
+        service.output().flush();
+        return readServiceResponse(service.input());
+    }
+
+    private byte[] serviceRequestBytes(String type, JsonNode payload) throws IOException {
         var request = objectMapper.createObjectNode()
                 .put("version", PROTOCOL_VERSION)
                 .put("secret", secret)
                 .put("type", type)
                 .set("payload", payload.deepCopy());
-        service.output().write(objectMapper.writeValueAsBytes(request));
-        service.output().write('\n');
-        service.output().flush();
-        return readServiceResponse(service.input());
+        var bytes = objectMapper.writeValueAsBytes(request);
+        if (bytes.length > MAX_SERVICE_FRAME_BYTES) {
+            throw new OversizedServiceFrameException();
+        }
+        return bytes;
     }
 
     private JsonNode readServiceResponse(InputStream input) throws IOException {
@@ -183,10 +206,71 @@ public final class NativeMessagingRelay {
                 || !secret.equals(response.path("secret").textValue())
                 || !response.path("type").isTextual()
                 || !NATIVE_SERVICE_RESPONSE_TYPES.contains(response.path("type").textValue())
-                || !response.path("payload").isObject()) {
+                || !response.path("payload").isObject()
+                || !validNativeServicePayload(
+                        response.path("type").textValue(), response.path("payload"))) {
             throw new IOException("Strict Mode service returned an invalid response");
         }
         return response;
+    }
+
+    private boolean validNativeServicePayload(String type, JsonNode payload) {
+        return switch (type) {
+            case "service.ack" -> payload.size() == 0;
+            case "service.focusSettings" -> validFocusSettingsResponsePayload(payload);
+            default -> false;
+        };
+    }
+
+    private boolean validFocusSettingsResponsePayload(JsonNode payload) {
+        return hasExactFields(payload, Set.of("revision", "settings", "chromeAppliedRevision"))
+                && positiveLong(payload.path("revision"))
+                && nonNegativeLong(payload.path("chromeAppliedRevision"))
+                && validFocusSettingsPayload(payload.path("settings"));
+    }
+
+    private boolean validFocusSettingsPayload(JsonNode settings) {
+        if (!settings.isObject()
+                || !hasExactFields(settings, FOCUS_SETTINGS_FIELDS)
+                || !settings.path("enabled").isBoolean()
+                || !settings.path("rules").isObject()
+                || !hasExactFields(settings.path("rules"), FOCUS_SITE_NAMES)) {
+            return false;
+        }
+        for (var site : FOCUS_SITE_NAMES) {
+            if (!validFocusRulePayload(settings.path("rules").path(site))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean validFocusRulePayload(JsonNode rule) {
+        if (!rule.isObject()
+                || !hasExactFields(rule, FOCUS_RULE_FIELDS)
+                || !rule.path("enabled").isBoolean()
+                || !intInRange(rule.path("doomscrollBudgetMinutes"), 1, 60)
+                || !intInRange(rule.path("warningScore"), 1, 50)
+                || !intInRange(rule.path("gracePeriodSeconds"), 0, 600)
+                || !rule.path("interventions").isArray()) {
+            return false;
+        }
+        var interventions = new HashSet<String>();
+        for (var intervention : rule.path("interventions")) {
+            if (!intervention.isTextual()
+                    || !FOCUS_INTERVENTION_NAMES.contains(intervention.textValue())
+                    || !interventions.add(intervention.textValue())) {
+                return false;
+            }
+        }
+        return !rule.path("enabled").booleanValue() || !interventions.isEmpty();
+    }
+
+    private boolean intInRange(JsonNode value, int minimum, int maximum) {
+        return value.isIntegralNumber()
+                && value.canConvertToInt()
+                && value.intValue() >= minimum
+                && value.intValue() <= maximum;
     }
 
     private void writeNativeResponse(OutputStream nativeOutput, JsonNode serviceResponse)
@@ -225,10 +309,16 @@ public final class NativeMessagingRelay {
             return false;
         }
         var appliedRevision = payload.path("appliedRevision");
-        return appliedRevision.isIntegralNumber()
-                && appliedRevision.canConvertToLong()
-                && appliedRevision.longValue() >= 0
+        return nonNegativeLong(appliedRevision)
                 && (!payload.has("legacySettings") || payload.path("legacySettings").isObject());
+    }
+
+    private boolean positiveLong(JsonNode value) {
+        return nonNegativeLong(value) && value.longValue() > 0;
+    }
+
+    private boolean nonNegativeLong(JsonNode value) {
+        return value.isIntegralNumber() && value.canConvertToLong() && value.longValue() >= 0;
     }
 
     private boolean hasExactFields(JsonNode node, Set<String> expected) {
@@ -369,6 +459,12 @@ public final class NativeMessagingRelay {
     }
 
     private record RelayRequest(String type, JsonNode payload) {}
+
+    private static final class OversizedServiceFrameException extends IOException {
+        private OversizedServiceFrameException() {
+            super("Strict Mode service request exceeds maximum size");
+        }
+    }
 
     private static final class UnixServiceConnectionFactory implements ServiceConnectionFactory {
         private final Path socketPath;
