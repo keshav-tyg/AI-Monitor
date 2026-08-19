@@ -8,12 +8,20 @@ import com.localfocuscoach.strict.core.StrictSession;
 import com.localfocuscoach.strict.core.StrictStateMachine;
 import com.localfocuscoach.strict.core.TypingChallenge;
 import com.localfocuscoach.strict.core.TypingChallengeService;
+import com.localfocuscoach.strict.focus.FocusIntervention;
+import com.localfocuscoach.strict.focus.FocusRule;
+import com.localfocuscoach.strict.focus.FocusSettings;
+import com.localfocuscoach.strict.focus.FocusSettingsPayload;
+import com.localfocuscoach.strict.focus.FocusSettingsValidator;
+import com.localfocuscoach.strict.focus.FocusSite;
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
+import com.localfocuscoach.strict.store.FocusSettingsRepository;
 import com.localfocuscoach.strict.store.StrictSessionRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -25,20 +33,28 @@ import java.util.concurrent.TimeUnit;
 
 public final class StrictModeService implements AutoCloseable {
     private static final int PROTOCOL_VERSION = 1;
+    private static final FocusSettings DEFAULT_FOCUS_SETTINGS = defaultFocusSettings();
     private static final Set<String> VALID_TYPES = Set.of(
             "dashboard.start",
             "dashboard.status",
             "dashboard.beginUnlock",
             "dashboard.submitUnlock",
+            "dashboard.focusSettings.get",
+            "dashboard.focusSettings.save",
             "relay.connected",
             "relay.heartbeat",
-            "relay.disconnected");
+            "relay.disconnected",
+            "relay.focusSettings.sync",
+            "relay.focusSettings.openDashboard");
 
     private final String secret;
     private final StrictSessionRepository repository;
+    private final FocusSettingsRepository focusSettingsRepository;
     private final ChromeController chromeController;
+    private final DashboardLauncher dashboardLauncher;
     private final StrictStateMachine stateMachine = new StrictStateMachine();
     private final TypingChallengeService challengeService = new TypingChallengeService();
+    private final FocusSettingsValidator focusSettingsValidator = new FocusSettingsValidator();
     private final Clock clock;
     private final ScheduledExecutorService scheduler;
     private final RestoreWarningNotifier restoreWarningNotifier;
@@ -47,15 +63,22 @@ public final class StrictModeService implements AutoCloseable {
     private Instant lastQuitWarningDeadline;
     private Instant notifiedWarningDeadline;
     private ScheduledFuture<?> scheduledCheck;
+    private long chromeAppliedRevision;
     private boolean chromeStateUncertain;
     private boolean closed;
 
     public StrictModeService(
-            String secret, StrictSessionRepository repository, ChromeController chromeController) {
+            String secret,
+            StrictSessionRepository repository,
+            FocusSettingsRepository focusSettingsRepository,
+            ChromeController chromeController,
+            DashboardLauncher dashboardLauncher) {
         this(
                 secret,
                 repository,
+                focusSettingsRepository,
                 chromeController,
+                dashboardLauncher,
                 Clock.systemUTC(),
                 Executors.newSingleThreadScheduledExecutor(runnable -> {
                     var thread = new Thread(runnable, "strict-mode-deadline");
@@ -68,12 +91,16 @@ public final class StrictModeService implements AutoCloseable {
     public StrictModeService(
             String secret,
             StrictSessionRepository repository,
+            FocusSettingsRepository focusSettingsRepository,
             ChromeController chromeController,
+            DashboardLauncher dashboardLauncher,
             RestoreWarningNotifier restoreWarningNotifier) {
         this(
                 secret,
                 repository,
+                focusSettingsRepository,
                 chromeController,
+                dashboardLauncher,
                 Clock.systemUTC(),
                 Executors.newSingleThreadScheduledExecutor(runnable -> {
                     var thread = new Thread(runnable, "strict-mode-deadline");
@@ -86,13 +113,17 @@ public final class StrictModeService implements AutoCloseable {
     StrictModeService(
             String secret,
             StrictSessionRepository repository,
+            FocusSettingsRepository focusSettingsRepository,
             ChromeController chromeController,
+            DashboardLauncher dashboardLauncher,
             Clock clock,
             ScheduledExecutorService scheduler) {
         this(
                 secret,
                 repository,
+                focusSettingsRepository,
                 chromeController,
+                dashboardLauncher,
                 clock,
                 scheduler,
                 RestoreWarningNotifier.NOOP);
@@ -101,7 +132,9 @@ public final class StrictModeService implements AutoCloseable {
     StrictModeService(
             String secret,
             StrictSessionRepository repository,
+            FocusSettingsRepository focusSettingsRepository,
             ChromeController chromeController,
+            DashboardLauncher dashboardLauncher,
             Clock clock,
             ScheduledExecutorService scheduler,
             RestoreWarningNotifier restoreWarningNotifier) {
@@ -110,7 +143,9 @@ public final class StrictModeService implements AutoCloseable {
         }
         this.secret = secret;
         this.repository = Objects.requireNonNull(repository);
+        this.focusSettingsRepository = Objects.requireNonNull(focusSettingsRepository);
         this.chromeController = Objects.requireNonNull(chromeController);
+        this.dashboardLauncher = Objects.requireNonNull(dashboardLauncher);
         this.clock = Objects.requireNonNull(clock);
         this.scheduler = Objects.requireNonNull(scheduler);
         this.restoreWarningNotifier = Objects.requireNonNull(restoreWarningNotifier);
@@ -143,12 +178,91 @@ public final class StrictModeService implements AutoCloseable {
             case "dashboard.status" -> status(message.payload(), now);
             case "dashboard.beginUnlock" -> beginUnlock(message.payload(), now);
             case "dashboard.submitUnlock" -> submitUnlock(message.payload());
+            case "dashboard.focusSettings.get" -> focusSettings(message.payload());
+            case "dashboard.focusSettings.save" -> saveFocusSettings(message.payload(), now);
             case "relay.connected", "relay.heartbeat" ->
                     updateConnection(message.payload(), ConnectionHealth.HEALTHY, now);
             case "relay.disconnected" ->
                     updateConnection(message.payload(), ConnectionHealth.DISCONNECTED, now);
+            case "relay.focusSettings.sync" -> syncFocusSettings(message.payload());
+            case "relay.focusSettings.openDashboard" -> openDashboard(message.payload());
             default -> authenticatedError("error.invalidRequest");
         };
+    }
+
+    private ProtocolMessage focusSettings(Map<String, Object> payload) {
+        if (!payload.isEmpty()) {
+            return authenticatedError("error.invalidRequest");
+        }
+        var settings = focusSettingsRepository
+                .load()
+                .orElseGet(() -> focusSettingsRepository.save(DEFAULT_FOCUS_SETTINGS));
+        return focusSettingsResponse(settings);
+    }
+
+    private ProtocolMessage saveFocusSettings(Map<String, Object> payload, Instant now) {
+        if (!payload.keySet().equals(Set.of("settings"))) {
+            return authenticatedError("error.invalidRequest");
+        }
+        final FocusSettings candidate;
+        try {
+            candidate = focusSettingsValidator.parse(stringMap(payload.get("settings")));
+        } catch (IllegalArgumentException exception) {
+            return authenticatedError("error.invalidRequest");
+        }
+
+        var active = repository.loadActive().orElse(null);
+        var current = focusSettingsRepository.load();
+        var strictModeActive = active != null
+                && (active.mode() != StrictMode.TIMED || now.isBefore(active.endsAt()));
+        if (strictModeActive
+                && current.isPresent()
+                && focusSettingsValidator.isWeakening(current.orElseThrow(), candidate)) {
+            return authenticatedError("error.focusSettingsWeakening");
+        }
+        if (active != null && !strictModeActive) {
+            advancePersistAndAct(active, now);
+            updateSchedule(null);
+        }
+        return focusSettingsResponse(focusSettingsRepository.save(candidate));
+    }
+
+    private ProtocolMessage syncFocusSettings(Map<String, Object> payload) {
+        if (!(payload.keySet().equals(Set.of("appliedRevision"))
+                || payload.keySet().equals(Set.of("appliedRevision", "legacySettings")))) {
+            return authenticatedError("error.invalidRequest");
+        }
+        final long appliedRevision;
+        final FocusSettings legacySettings;
+        try {
+            appliedRevision = nonNegativeLong(payload.get("appliedRevision"));
+            legacySettings = payload.containsKey("legacySettings")
+                    ? focusSettingsValidator.parse(stringMap(payload.get("legacySettings")))
+                    : null;
+        } catch (IllegalArgumentException exception) {
+            return authenticatedError("error.invalidRequest");
+        }
+
+        var current = focusSettingsRepository.load();
+        if (current.isEmpty()) {
+            current = java.util.Optional.of(legacySettings == null
+                    ? focusSettingsRepository.save(DEFAULT_FOCUS_SETTINGS)
+                    : focusSettingsRepository.importIfAbsent(legacySettings));
+        }
+        chromeAppliedRevision = Math.max(chromeAppliedRevision, appliedRevision);
+        return focusSettingsResponse(current.orElseThrow());
+    }
+
+    private ProtocolMessage openDashboard(Map<String, Object> payload) {
+        if (!payload.isEmpty()) {
+            return authenticatedError("error.invalidRequest");
+        }
+        try {
+            dashboardLauncher.open();
+        } catch (RuntimeException exception) {
+            // A launcher failure must not stop the authenticated local service.
+        }
+        return authenticatedResponse("service.ack", Map.of());
     }
 
     private ProtocolMessage start(Map<String, Object> payload, Instant now) {
@@ -265,6 +379,8 @@ public final class StrictModeService implements AutoCloseable {
         connectionHealth = health;
         if (health == ConnectionHealth.HEALTHY) {
             lastQuitWarningDeadline = null;
+        } else {
+            chromeAppliedRevision = 0;
         }
         var active = repository.loadActive();
         if (active.isEmpty()) {
@@ -417,6 +533,61 @@ public final class StrictModeService implements AutoCloseable {
             payload.put("warningEndsAt", session.warningEndsAt().toString());
         }
         return authenticatedResponse("service.status", payload);
+    }
+
+    private ProtocolMessage focusSettingsResponse(FocusSettings settings) {
+        var settingsPayload = new LinkedHashMap<>(FocusSettingsPayload.toPayload(settings));
+        settingsPayload.remove("revision");
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("revision", settings.revision());
+        payload.put("settings", settingsPayload);
+        payload.put("chromeAppliedRevision", chromeAppliedRevision);
+        return authenticatedResponse("service.focusSettings", payload);
+    }
+
+    private Map<String, Object> stringMap(Object value) {
+        if (!(value instanceof Map<?, ?> raw)) {
+            throw new IllegalArgumentException("Expected an object");
+        }
+        var result = new LinkedHashMap<String, Object>();
+        for (var entry : raw.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new IllegalArgumentException("Expected string object keys");
+            }
+            result.put(key, entry.getValue());
+        }
+        return result;
+    }
+
+    private long nonNegativeLong(Object value) {
+        if (!(value instanceof Byte || value instanceof Short || value instanceof Integer || value instanceof Long)) {
+            throw new IllegalArgumentException("Expected an integer revision");
+        }
+        var revision = ((Number) value).longValue();
+        if (revision < 0) {
+            throw new IllegalArgumentException("Revision must not be negative");
+        }
+        return revision;
+    }
+
+    private static FocusSettings defaultFocusSettings() {
+        var rule = new FocusRule(
+                false,
+                5,
+                10,
+                60,
+                List.of(
+                        FocusIntervention.NOTIFY,
+                        FocusIntervention.PAUSE,
+                        FocusIntervention.CLOSE_TAB,
+                        FocusIntervention.BLOCK));
+        return new FocusSettings(
+                0,
+                false,
+                Map.of(
+                        FocusSite.INSTAGRAM_REELS, rule,
+                        FocusSite.X_TIMELINE, rule,
+                        FocusSite.YOUTUBE_SHORTS, rule));
     }
 
     private ProtocolMessage authenticatedError(String type) {

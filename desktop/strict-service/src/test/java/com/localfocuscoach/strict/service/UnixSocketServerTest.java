@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.protocol.ProtocolCodec;
+import com.localfocuscoach.strict.protocol.ProtocolMessage;
+import com.localfocuscoach.strict.store.SqliteFocusSettingsRepository;
 import com.localfocuscoach.strict.store.SqliteStrictSessionRepository;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -26,6 +28,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +55,7 @@ class UnixSocketServerTest {
     void malformedJsonProducesAnErrorFrameWithoutDatabaseWrite(@TempDir Path directory)
             throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var codec = new ProtocolCodec();
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         server = new UnixSocketServer(socket, codec, service, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -68,7 +71,7 @@ class UnixSocketServerTest {
     void missingSecretProducesAnErrorFrameWithoutDatabaseWrite(@TempDir Path directory)
             throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var codec = new ProtocolCodec();
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         server = new UnixSocketServer(socket, codec, service, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -80,6 +83,43 @@ class UnixSocketServerTest {
 
         assertEquals("error.invalidRequest", response.type());
         assertTrue(repository.loadActive().isEmpty());
+    }
+
+    @Test
+    void unauthenticatedOrMalformedOpenDashboardNeverInvokesLauncher(@TempDir Path directory)
+            throws Exception {
+        var database = directory.resolve("strict-mode.sqlite");
+        var repository = new SqliteStrictSessionRepository(database);
+        var launcher = new RecordingDashboardLauncher();
+        service = new StrictModeService(
+                SECRET,
+                repository,
+                new SqliteFocusSettingsRepository(database),
+                new AbsentChromeController(),
+                launcher);
+        var codec = new ProtocolCodec();
+        var socket = directory.resolve("run").resolve("strict-mode.sock");
+        server = new UnixSocketServer(socket, codec, service, Clock.fixed(NOW, ZoneOffset.UTC));
+        server.start();
+
+        var unauthorized = codec.decode(request(
+                socket,
+                codec.encode(new ProtocolMessage(
+                        1,
+                        "wrong",
+                        "relay.focusSettings.openDashboard",
+                        Map.of()))));
+        var malformed = codec.decode(request(
+                socket,
+                codec.encode(new ProtocolMessage(
+                        1,
+                        SECRET,
+                        "relay.focusSettings.openDashboard",
+                        Map.of("page", "private content")))));
+
+        assertEquals("error.unauthorized", unauthorized.type());
+        assertEquals("error.invalidRequest", malformed.type());
+        assertEquals(0, launcher.openCalls);
     }
 
     @Test
@@ -102,15 +142,14 @@ class UnixSocketServerTest {
     @Test
     void secondServerCannotReplaceAnActiveSocket(@TempDir Path directory) throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var codec = new ProtocolCodec();
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         server = new UnixSocketServer(socket, codec, service, Clock.fixed(NOW, ZoneOffset.UTC));
         server.start();
-        var otherService = new StrictModeService(
-                SECRET,
-                new SqliteStrictSessionRepository(directory.resolve("other.sqlite")),
-                new AbsentChromeController());
+        var otherDatabase = directory.resolve("other.sqlite");
+        var otherService = createService(
+                otherDatabase, new SqliteStrictSessionRepository(otherDatabase));
         var otherServer = new UnixSocketServer(
                 socket, codec, otherService, Clock.fixed(NOW, ZoneOffset.UTC));
 
@@ -134,7 +173,7 @@ class UnixSocketServerTest {
     @Test
     void refusesToReplaceARegularFileAtTheSocketPath(@TempDir Path directory) throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         Files.createDirectories(socket.getParent());
         Files.writeString(socket, "preserve-me");
@@ -148,7 +187,7 @@ class UnixSocketServerTest {
     @Test
     void refusesToReplaceASymlinkAtTheSocketPath(@TempDir Path directory) throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         Files.createDirectories(socket.getParent());
         var target = directory.resolve("keep-target");
@@ -166,7 +205,7 @@ class UnixSocketServerTest {
     void rejectsAnUnterminatedEofFrameWithoutDatabaseWrite(@TempDir Path directory)
             throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var codec = new ProtocolCodec();
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         server = new UnixSocketServer(socket, codec, service, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -187,7 +226,7 @@ class UnixSocketServerTest {
     @Test
     void closeDoesNotDeleteAReplacementAtTheSocketPath(@TempDir Path directory) throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         server = new UnixSocketServer(
                 socket, new ProtocolCodec(), service, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -203,7 +242,7 @@ class UnixSocketServerTest {
     @Test
     void replacesOnlyAVerifiedStaleSocket(@TempDir Path directory) throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var codec = new ProtocolCodec();
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         Files.createDirectories(socket.getParent());
@@ -228,7 +267,7 @@ class UnixSocketServerTest {
     void awaitTerminationReturnsAfterUnexpectedAcceptLoopShutdown(@TempDir Path directory)
             throws Exception {
         var repository = new SqliteStrictSessionRepository(directory.resolve("strict-mode.sqlite"));
-        service = new StrictModeService(SECRET, repository, new AbsentChromeController());
+        service = createService(directory.resolve("strict-mode.sqlite"), repository);
         var socket = directory.resolve("run").resolve("strict-mode.sock");
         server = new UnixSocketServer(
                 socket, new ProtocolCodec(), service, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -241,6 +280,16 @@ class UnixSocketServerTest {
 
         assertTimeoutPreemptively(Duration.ofSeconds(2), server::awaitTermination);
         assertFalse(Files.exists(socket));
+    }
+
+    private StrictModeService createService(
+            Path database, SqliteStrictSessionRepository repository) {
+        return new StrictModeService(
+                SECRET,
+                repository,
+                new SqliteFocusSettingsRepository(database),
+                new AbsentChromeController(),
+                () -> {});
     }
 
     private String request(Path socket, String frame) throws Exception {
@@ -280,6 +329,15 @@ class UnixSocketServerTest {
         @Override
         public QuitResult requestGracefulQuit() {
             return QuitResult.FAILED;
+        }
+    }
+
+    private static final class RecordingDashboardLauncher implements DashboardLauncher {
+        private int openCalls;
+
+        @Override
+        public void open() {
+            openCalls++;
         }
     }
 }
