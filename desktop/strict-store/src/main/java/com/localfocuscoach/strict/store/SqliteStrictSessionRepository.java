@@ -21,7 +21,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 public final class SqliteStrictSessionRepository implements StrictSessionRepository {
-    private static final String MIGRATION_RESOURCE = "/db/migration/V1__strict_session.sql";
+    private static final SqliteMigrationSupport.Migration[] MIGRATIONS = {
+        new SqliteMigrationSupport.Migration(1, "strict_session", "/db/migration/V1__strict_session.sql")
+    };
 
     private final String jdbcUrl;
 
@@ -142,11 +144,7 @@ public final class SqliteStrictSessionRepository implements StrictSessionReposit
         try (var connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
-                createMigrationHistory(connection);
-                if (!migrationApplied(connection, 1)) {
-                    applyMigration(connection, MIGRATION_RESOURCE);
-                    recordMigration(connection, 1, "strict_session");
-                }
+                SqliteMigrationSupport.applyPending(connection, SqliteStrictSessionRepository.class, MIGRATIONS);
                 connection.commit();
             } catch (IOException | SQLException exception) {
                 rollback(connection, exception);
@@ -171,57 +169,6 @@ public final class SqliteStrictSessionRepository implements StrictSessionReposit
                 exception.addSuppressed(closeFailure);
             }
             throw exception;
-        }
-    }
-
-    private void createMigrationHistory(Connection connection) throws SQLException {
-        try (var statement = connection.createStatement()) {
-            statement.executeUpdate("""
-                    CREATE TABLE IF NOT EXISTS schema_migration (
-                        version INTEGER PRIMARY KEY,
-                        description TEXT NOT NULL,
-                        applied_at TEXT NOT NULL
-                    )
-                    """);
-        }
-    }
-
-    private boolean migrationApplied(Connection connection, int version) throws SQLException {
-        try (var statement = connection.prepareStatement(
-                        "SELECT 1 FROM schema_migration WHERE version = ?")) {
-            statement.setInt(1, version);
-            try (var result = statement.executeQuery()) {
-                return result.next();
-            }
-        }
-    }
-
-    private void applyMigration(Connection connection, String resource) throws IOException, SQLException {
-        var stream = SqliteStrictSessionRepository.class.getResourceAsStream(resource);
-        if (stream == null) {
-            throw new IOException("Missing migration resource: " + resource);
-        }
-        String migration;
-        try (stream) {
-            migration = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        }
-        try (var statement = connection.createStatement()) {
-            for (var command : migration.split(";")) {
-                if (!command.isBlank()) {
-                    statement.executeUpdate(command);
-                }
-            }
-        }
-    }
-
-    private void recordMigration(Connection connection, int version, String description)
-            throws SQLException {
-        try (var statement = connection.prepareStatement(
-                        "INSERT INTO schema_migration (version, description, applied_at) VALUES (?, ?, ?)")) {
-            statement.setInt(1, version);
-            statement.setString(2, description);
-            statement.setString(3, Instant.now().toString());
-            statement.executeUpdate();
         }
     }
 
@@ -271,4 +218,73 @@ public final class SqliteStrictSessionRepository implements StrictSessionReposit
     private IllegalStateException storageFailure(String operation, Exception cause) {
         return new IllegalStateException("Failed to " + operation, cause);
     }
+}
+
+final class SqliteMigrationSupport {
+    private SqliteMigrationSupport() {}
+
+    static void applyPending(Connection connection, Class<?> resourceOwner, Migration... migrations)
+            throws IOException, SQLException {
+        createMigrationHistory(connection);
+        for (var migration : migrations) {
+            if (!migrationApplied(connection, migration.version())) {
+                applyMigration(connection, resourceOwner, migration.resource());
+                recordMigration(connection, migration.version(), migration.description());
+            }
+        }
+    }
+
+    private static void createMigrationHistory(Connection connection) throws SQLException {
+        try (var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS schema_migration (
+                        version INTEGER PRIMARY KEY,
+                        description TEXT NOT NULL,
+                        applied_at TEXT NOT NULL
+                    )
+                    """);
+        }
+    }
+
+    private static boolean migrationApplied(Connection connection, int version) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                        "SELECT 1 FROM schema_migration WHERE version = ?")) {
+            statement.setInt(1, version);
+            try (var result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private static void applyMigration(Connection connection, Class<?> resourceOwner, String resource)
+            throws IOException, SQLException {
+        var stream = resourceOwner.getResourceAsStream(resource);
+        if (stream == null) {
+            throw new IOException("Missing migration resource: " + resource);
+        }
+        String migration;
+        try (stream) {
+            migration = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        try (var statement = connection.createStatement()) {
+            for (var command : migration.split(";")) {
+                if (!command.isBlank()) {
+                    statement.executeUpdate(command);
+                }
+            }
+        }
+    }
+
+    private static void recordMigration(Connection connection, int version, String description)
+            throws SQLException {
+        try (var statement = connection.prepareStatement(
+                        "INSERT INTO schema_migration (version, description, applied_at) VALUES (?, ?, ?)")) {
+            statement.setInt(1, version);
+            statement.setString(2, description);
+            statement.setString(3, Instant.now().toString());
+            statement.executeUpdate();
+        }
+    }
+
+    record Migration(int version, String description, String resource) {}
 }
