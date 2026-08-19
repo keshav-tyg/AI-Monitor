@@ -31,6 +31,8 @@ public final class FocusRulesView extends BorderPane {
     private final Button save = new Button("Save Focus Rules");
     private final EnumMap<FocusSite, RuleControls> rules = new EnumMap<>(FocusSite.class);
     private boolean disposed;
+    private boolean saveInFlight;
+    private long draftGeneration;
     private long responseGeneration;
 
     public FocusRulesView(ServiceClient client, Runnable showStrictMode) {
@@ -42,7 +44,7 @@ public final class FocusRulesView extends BorderPane {
     }
 
     public void refresh() {
-        if (disposed) {
+        if (disposed || saveInFlight) {
             return;
         }
         var generation = ++responseGeneration;
@@ -104,6 +106,7 @@ public final class FocusRulesView extends BorderPane {
         var footer = new VBox(8, chromeSyncStatus, feedback, save);
         footer.setPadding(new Insets(14, 32, 28, 32));
         setBottom(footer);
+        trackDraftChanges();
     }
 
     private RuleControls createRuleControls(FocusSite site) {
@@ -146,6 +149,10 @@ public final class FocusRulesView extends BorderPane {
     }
 
     private void renderSnapshot(Map<String, Object> payload) {
+        renderSnapshot(parseSnapshot(payload));
+    }
+
+    private FocusSettingsSnapshot parseSnapshot(Map<String, Object> payload) {
         if (!payload.keySet().equals(Set.of("revision", "settings", "chromeAppliedRevision"))
                 || !(payload.get("settings") instanceof Map<?, ?> rawSettings)) {
             throw new IllegalArgumentException("Invalid Focus Rules response");
@@ -155,7 +162,11 @@ public final class FocusRulesView extends BorderPane {
         completePayload.put("revision", payload.get("revision"));
         var settings = FocusSettingsPayload.fromPayload(completePayload);
         var chromeRevision = nonNegativeLong(payload.get("chromeAppliedRevision"));
+        return new FocusSettingsSnapshot(settings, chromeRevision);
+    }
 
+    private void renderSnapshot(FocusSettingsSnapshot snapshot) {
+        var settings = snapshot.settings();
         protectionEnabled.setSelected(settings.enabled());
         for (var site : FocusSite.values()) {
             var rule = settings.rules().get(site);
@@ -170,13 +181,18 @@ public final class FocusRulesView extends BorderPane {
                         .setSelected(rule.interventions().contains(intervention));
             }
         }
-        chromeSyncStatus.setText(
-                chromeRevision == settings.revision() ? "Synced with Chrome" : "Waiting for Chrome");
+        renderChromeSyncStatus(snapshot);
         feedback.setText("");
     }
 
+    private void renderChromeSyncStatus(FocusSettingsSnapshot snapshot) {
+        chromeSyncStatus.setText(snapshot.chromeRevision() == snapshot.settings().revision()
+                ? "Synced with Chrome"
+                : "Waiting for Chrome");
+    }
+
     private void save() {
-        if (disposed) {
+        if (disposed || saveInFlight) {
             return;
         }
         var proposedRules = new EnumMap<FocusSite, FocusRule>(FocusSite.class);
@@ -220,12 +236,17 @@ public final class FocusRulesView extends BorderPane {
         var proposed = new FocusSettings(0, protectionEnabled.isSelected(), proposedRules);
         var payload = new LinkedHashMap<>(FocusSettingsPayload.toPayload(proposed));
         payload.remove("revision");
+        var submittedDraftGeneration = draftGeneration;
+        saveInFlight = true;
+        setFormDisabled(true);
         feedback.setText("Saving Focus Rules…");
         var generation = ++responseGeneration;
         client.saveFocusSettingsAsync(payload, (response, failure) -> {
             if (disposed || generation != responseGeneration) {
                 return;
             }
+            saveInFlight = false;
+            setFormDisabled(false);
             if (failure != null || response == null) {
                 feedback.setText("Could not save Focus Rules");
                 return;
@@ -240,12 +261,50 @@ public final class FocusRulesView extends BorderPane {
                 return;
             }
             try {
-                renderSnapshot(response.payload());
+                var snapshot = parseSnapshot(response.payload());
+                if (draftGeneration == submittedDraftGeneration) {
+                    renderSnapshot(snapshot);
+                } else {
+                    renderChromeSyncStatus(snapshot);
+                }
                 feedback.setText("Focus Rules saved");
             } catch (IllegalArgumentException exception) {
                 feedback.setText("Could not save Focus Rules");
             }
         });
+    }
+
+    private void trackDraftChanges() {
+        protectionEnabled.selectedProperty().addListener(
+                (observable, previous, current) -> draftGeneration++);
+        for (var controls : rules.values()) {
+            controls.enabled().selectedProperty().addListener(
+                    (observable, previous, current) -> draftGeneration++);
+            controls.budget().textProperty().addListener(
+                    (observable, previous, current) -> draftGeneration++);
+            controls.warningScore().textProperty().addListener(
+                    (observable, previous, current) -> draftGeneration++);
+            controls.gracePeriod().textProperty().addListener(
+                    (observable, previous, current) -> draftGeneration++);
+            for (var intervention : controls.interventions().values()) {
+                intervention.selectedProperty().addListener(
+                        (observable, previous, current) -> draftGeneration++);
+            }
+        }
+    }
+
+    private void setFormDisabled(boolean disabled) {
+        protectionEnabled.setDisable(disabled);
+        save.setDisable(disabled);
+        for (var controls : rules.values()) {
+            controls.enabled().setDisable(disabled);
+            controls.budget().setDisable(disabled);
+            controls.warningScore().setDisable(disabled);
+            controls.gracePeriod().setDisable(disabled);
+            for (var intervention : controls.interventions().values()) {
+                intervention.setDisable(disabled);
+            }
+        }
     }
 
     private static Integer integer(TextField field, int minimum, int maximum) {
@@ -321,6 +380,8 @@ public final class FocusRulesView extends BorderPane {
             TextField warningScore,
             TextField gracePeriod,
             EnumMap<FocusIntervention, CheckBox> interventions) {}
+
+    private record FocusSettingsSnapshot(FocusSettings settings, long chromeRevision) {}
 
     private record SiteMetadata(String label, String prefix) {
         private static SiteMetadata forSite(FocusSite site) {

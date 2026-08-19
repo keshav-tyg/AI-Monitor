@@ -174,6 +174,66 @@ class FocusRulesViewTest {
     }
 
     @Test
+    void pendingSaveIsolatesTheSubmittedDraftUntilCompletion() throws Exception {
+        var saveRequests = new AtomicInteger();
+        var saveStarted = new CountDownLatch(1);
+        var releaseSave = new CountDownLatch(1);
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                saveRequests.incrementAndGet();
+                saveStarted.countDown();
+                await(releaseSave);
+                @SuppressWarnings("unchecked")
+                var settings = (Map<String, Object>) request.payload().get("settings");
+                return focusSettingsResponse(4L, 4L, settings);
+            }
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                fire(view, "#saveFocusRules");
+                return null;
+            });
+            assertTrue(saveStarted.await(1, TimeUnit.SECONDS));
+
+            FxTestSupport.call(() -> {
+                var budget = (TextField) view.lookup("#instagramReelsBudget");
+                var protection = (CheckBox) view.lookup("#focusProtectionEnabled");
+                var save = (Button) view.lookup("#saveFocusRules");
+                assertTrue(budget.isDisabled());
+                assertTrue(protection.isDisabled());
+                assertTrue(save.isDisabled());
+
+                // A property mutation cannot stand in for a user edit on a disabled control,
+                // but it proves the response also honors the draft-generation guard.
+                budget.setText("9");
+                save.fire();
+                return null;
+            });
+            releaseSave.countDown();
+            FxTestSupport.waitFor(
+                    () -> "Focus Rules saved".equals(text(view, "#focusSettingsFeedback")),
+                    "isolated Focus Rules save");
+
+            FxTestSupport.call(() -> {
+                assertEquals(
+                        "9", ((TextField) view.lookup("#instagramReelsBudget")).getText());
+                assertFalse(((TextField) view.lookup("#instagramReelsBudget")).isDisabled());
+                assertFalse(((Button) view.lookup("#saveFocusRules")).isDisabled());
+                assertEquals("Synced with Chrome", textOnFxThread(view, "#chromeSyncStatus"));
+                return null;
+            });
+            assertEquals(1, saveRequests.get());
+        } finally {
+            releaseSave.countDown();
+            dispose(view, client);
+        }
+    }
+
+    @Test
     void rendersWaitingUntilChromeAcknowledgesTheCurrentRevision() {
         var response = new AtomicReference<>(focusSettingsResponse(3L, 2L));
         var client = new ServiceClient(SECRET, request -> response.get());
@@ -251,6 +311,10 @@ class FocusRulesViewTest {
                     "4",
                     FxTestSupport.call(() -> ((TextField) view.lookup("#instagramReelsBudget"))
                             .getText()));
+            assertFalse(FxTestSupport.call(
+                    () -> ((TextField) view.lookup("#instagramReelsBudget")).isDisabled()));
+            assertFalse(FxTestSupport.call(
+                    () -> ((Button) view.lookup("#saveFocusRules")).isDisabled()));
         } finally {
             dispose(view, client);
         }
