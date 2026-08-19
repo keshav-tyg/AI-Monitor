@@ -97,6 +97,27 @@ counts. It never sees titles, captions, post text, URLs, or identifiers. It can
 veto a doomscroll wall when behaviour looks deliberate. Any model failure
 leaves you less restricted: your declaration governs unchanged.
 
+### What the on-device model does
+
+Gemini Nano is an optional **second opinion**, not the detector or the source
+of enforcement. The deterministic session budget and score ladder remain in
+charge. Once a declared session has at least five viewed items, the extension
+may ask the local model at most once every 20 seconds whether the aggregate
+behaviour matches the person's declared intent.
+
+The model receives only the supported feed, declared intent, entry type,
+session duration, item count, median dwell time and completion, fully watched
+items, replay and unmuted counts, purposeful-action count, and scroll-burst
+count. It returns a schema-checked verdict, confidence, and short reason.
+
+- For a declared doomscroll session whose budget has elapsed, a confident
+  indication that the behaviour looks deliberate can prevent the wall.
+- For a declared purposeful session, only a high-confidence indication that the
+  behaviour looks like passive scrolling can raise a wall.
+- It never decides the warning score, Strict Mode, browser-close behavior, or
+  any direct-link item. If Gemini Nano is missing, unavailable, slow, or
+  uncertain, the normal local rules apply unchanged.
+
 The original score ladder still provides the configurable notice/pause/close
 and block interventions for sustained passive use. Its transparent signals are:
 
