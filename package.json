@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:production": "LFC_EXTENSION_CHANNEL=production vite build",
     "test": "vitest",
     "typecheck": "tsc --noEmit"
   },

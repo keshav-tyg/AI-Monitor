@@ -6,6 +6,16 @@ they exercise tab closing, network rules, notifications, and live site markup.
 Run through this list against a fresh `npm run build` + **Load unpacked** of
 `dist/` before calling a change done.
 
+## Strict Mode companion
+
+The existing extension checks below remain useful on their own. The companion
+adds a separate macOS/Google Chrome-only acceptance pass, which requires a
+packaged app image, a stable loaded-extension ID, and the per-user companion
+registrations. Follow
+[`desktop/docs/manual-strict-mode-checklist.md`](../desktop/docs/manual-strict-mode-checklist.md)
+for that pass. Do not substitute a different Chromium browser, a temporary
+extension ID, or a system-wide LaunchDaemon.
+
 ## Fail-open guarantees
 
 - [ ] **Unsupported routes generate no action.** Visit a profile page, a search

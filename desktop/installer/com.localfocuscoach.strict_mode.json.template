@@ -1,0 +1,9 @@
+{
+  "name": "__NATIVE_HOST_NAME__",
+  "description": "Local Focus Coach Strict Mode relay",
+  "path": "__RELAY_EXECUTABLE__",
+  "type": "stdio",
+  "allowed_origins": [
+    "__ALLOWED_ORIGIN__"
+  ]
+}

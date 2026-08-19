@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.localfocuscoach.strict-service</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__SERVICE_EXECUTABLE__</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>__SERVICE_STDOUT__</string>
+    <key>StandardErrorPath</key>
+    <string>__SERVICE_STDERR__</string>
+</dict>
+</plist>

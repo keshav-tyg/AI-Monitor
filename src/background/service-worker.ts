@@ -49,6 +49,7 @@ import type {
   SiteStatus,
 } from '../shared/types';
 import { classify, resetClassifierClient } from './classifier-client';
+import { startNativeBridge } from './native-bridge';
 
 /** Per-tab scoring state. Never persisted — it dies with the worker. */
 const sessions = new Map<number, SessionState>();
@@ -731,6 +732,7 @@ function registerListeners(): void {
 }
 
 registerListeners();
+startNativeBridge();
 
 export type { BlockEntry };
 
