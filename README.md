@@ -49,6 +49,17 @@ enforcement cache. If the companion is temporarily unavailable, cached rules
 continue to enforce and Chrome asks for the newest revision when it reconnects.
 The cache is never an editable browser settings surface.
 
+### Focus sensitivity
+
+Choose how quickly the dashboard should step in when passive scrolling builds:
+
+- Mild — score 10 — intervenes after more sustained passive scrolling
+- Medium — score 5 — a balanced reminder
+- Aggressive — score 1 — intervenes quickly after passive scrolling begins
+
+The scores are an implementation detail retained for compatibility; the
+dashboard presents this choice as Focus sensitivity.
+
 ## What it watches
 
 Only these three views, and nothing else:
@@ -100,10 +111,10 @@ leaves you less restricted: your declaration governs unchanged.
 ### What the on-device model does
 
 Gemini Nano is an optional **second opinion**, not the detector or the source
-of enforcement. The deterministic session budget and score ladder remain in
-charge. Once a declared session has at least five viewed items, the extension
-may ask the local model at most once every 20 seconds whether the aggregate
-behaviour matches the person's declared intent.
+of enforcement. The deterministic session budget and Focus sensitivity remain
+in charge. Once a declared session has at least five viewed items, the
+extension may ask the local model at most once every 20 seconds whether the
+aggregate behaviour matches the person's declared intent.
 
 The model receives only the supported feed, declared intent, entry type,
 session duration, item count, median dwell time and completion, fully watched
@@ -114,11 +125,11 @@ count. It returns a schema-checked verdict, confidence, and short reason.
   indication that the behaviour looks deliberate can prevent the wall.
 - For a declared purposeful session, only a high-confidence indication that the
   behaviour looks like passive scrolling can raise a wall.
-- It never decides the warning score, Strict Mode, browser-close behavior, or
+- It never decides Focus sensitivity, Strict Mode, browser-close behavior, or
   any direct-link item. If Gemini Nano is missing, unavailable, slow, or
   uncertain, the normal local rules apply unchanged.
 
-The original score ladder still provides the configurable notice/pause/close
+Under the hood, the score ladder provides the configured notice/pause/close
 and block interventions for sustained passive use. Its transparent signals are:
 
 - **content advance** (+2) — the media source changed, or the timeline moved a
@@ -135,8 +146,9 @@ Two rules keep it honest:
 
 A 90-second gap with no events ends the session and resets the score.
 
-When the score crosses your warning threshold, escalation begins — and each
-step costs a full grace period, so stopping means you never see the next one:
+When the internal score reaches the selected sensitivity threshold, escalation
+begins — and each step costs a full grace period, so stopping means you never
+see the next one:
 
 ```
 notify  →  (grace)  →  pause screen  →  (grace)  →  close tab

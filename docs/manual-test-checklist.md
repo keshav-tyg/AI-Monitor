@@ -26,9 +26,9 @@ Run through this list against a fresh `npm run build` + **Load unpacked** of
       rules still enforce and the dashboard reports **Waiting for Chrome**;
       reconnect and confirm it returns to **Synced with Chrome**.
 - [ ] **Strict Mode rejects weakening edits.** During an active Strict Mode
-      session, confirm a larger budget, higher warning score, longer grace
-      period, disabling protection, or changing intervention order is rejected.
-      Confirm a shorter budget is accepted.
+      session, confirm a larger budget, a less-sensitive Focus sensitivity,
+      longer grace period, disabling protection, or changing intervention
+      order is rejected. Confirm a shorter budget is accepted.
 - [ ] **Options only opens the dashboard.** Open the Chrome Options page.
       Confirm it has no editable Focus Rule inputs or save action, then choose
       **Open Local Focus Coach** and confirm the installed dashboard opens.
@@ -62,8 +62,8 @@ extension ID, or a system-wide LaunchDaemon.
 - [ ] **A single Reel or Short causes no warning.** Open one, watch it through,
       leave within two minutes. Silence.
 - [ ] **Sustained scrolling produces a reasoned warning.** Scroll a feed
-      continuously past the 120-second mark and the score threshold. The notice
-      names counts and duration — for example "8 content advances and 6
+      continuously past the 120-second mark and the selected Focus sensitivity
+      threshold. The notice names counts and duration — for example "8 content advances and 6
       continuous scrolls over 4m 40s" — and no page content.
 - [ ] **Purposeful actions lower confidence.** Mid-session, perform each of:
       a search, a profile visit, a comment, a save, opening a message, and
@@ -89,6 +89,10 @@ extension ID, or a system-wide LaunchDaemon.
 - [ ] **A direct link gets one free item.** Paste a specific Reel URL or open
       one from another app. Confirm it opens without a prompt or wall. Advance
       once, then confirm the intent prompt appears.
+- [ ] **A direct YouTube Short gets one free item.** Directly open one
+      `youtube.com/shorts/<id>` URL and confirm no intent prompt appears on
+      that first item. Swipe to a second distinct Short and confirm the intent
+      prompt appears once.
 - [ ] **Doomscroll budget walls on the next advance.** Set the doomscroll
       session budget to one minute, declare doomscrolling, and use Reels while
       it is foregrounded for one minute. The next advance must show the wall,
@@ -164,8 +168,9 @@ carry over — never reset, never bypassed.
 - [ ] **Dashboard requires an explicit save.** Toggle a rule, close the
       dashboard without saving, reopen it — the saved value is unchanged.
 - [ ] **Dashboard validation blocks bad input.** Enter a session budget of `0`,
-      warning score `99`, grace `-1`, and an enabled rule with no interventions.
-      Each shows an inline error and nothing persists.
+      grace `-1`, and an enabled rule with no interventions. Each shows an
+      inline error and nothing persists. Confirm Focus sensitivity offers only
+      Mild, Medium, and Aggressive.
 - [ ] **Feedback records.** Click Accurate and Inaccurate on review entries and
       confirm the choice survives a reload.
 - [ ] **Dashboard says what will happen.** Enable a rule and read its summary
