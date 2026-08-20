@@ -1,6 +1,7 @@
 package com.localfocuscoach.strict.dashboard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
@@ -8,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import javafx.scene.Scene;
 import javafx.scene.image.WritableImage;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +36,49 @@ class DashboardVisualRegressionTest {
             assertColorNear(Color.web("#e8e7e1"), snapshot.getPixelReader().getColor(800, 20));
             assertColorNear(Color.web("#e8e7e1"), snapshot.getPixelReader().getColor(100, 200));
             assertColorNear(Color.web("#f0efe9"), snapshot.getPixelReader().getColor(1000, 50));
+        } finally {
+            FxTestSupport.call(() -> {
+                dashboard.dispose();
+                return null;
+            });
+            client.close();
+        }
+    }
+
+    @Test
+    void focusRulesMatchesTheReferenceCardGridAndPinnedStatusGeometry() {
+        var client = new ServiceClient(SECRET, request -> focusSettingsResponse());
+        var dashboard = FxTestSupport.call(() -> {
+            var created = new DashboardApp.DashboardView(client);
+            new Scene(created, 1100, 760);
+            created.applyCss();
+            created.layout();
+            return created;
+        });
+        try {
+            FxTestSupport.waitFor(
+                    () -> dashboard.lookup("#instagramReelsBadge") != null,
+                    "Figma Focus Rules hierarchy");
+            FxTestSupport.call(() -> {
+                dashboard.applyCss();
+                dashboard.layout();
+                var protection = (Region) dashboard.lookup("#focusProtectionCard");
+                var cards = (GridPane) dashboard.lookup("#focusRulesCards");
+                var instagram = (Region) dashboard.lookup("#instagramReelsRule");
+                var youtube = (Region) dashboard.lookup("#youtubeShortsRule");
+                var status = (Region) dashboard.lookup("#focusRulesStatusBar");
+
+                assertNotNull(protection);
+                assertEquals(2, cards.getColumnConstraints().size());
+                assertTrue(protection.getWidth() >= cards.getWidth() - 2.0);
+                assertEquals(instagram.getWidth(), youtube.getWidth(), 1.0);
+                assertTrue(youtube.localToScene(youtube.getBoundsInLocal()).getMinX()
+                        > instagram.localToScene(instagram.getBoundsInLocal()).getMinX());
+                assertTrue(status.isVisible());
+                assertNotNull(status.getScene());
+                assertTrue(status.localToScene(status.getBoundsInLocal()).getMinY() > 700.0);
+                return null;
+            });
         } finally {
             FxTestSupport.call(() -> {
                 dashboard.dispose();

@@ -353,3 +353,280 @@
     -fx-background-color: #ffffff;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.08), 3, 0, 0, 1);
 }
+
+.dashboard .focusRulesHeader,
+.dashboard .focusRulesContent {
+    -fx-background-color: #f0efe9;
+}
+
+.dashboard .focusRulesPageTitle {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1c1c1e;
+}
+
+.dashboard .focusRulesPageDescription {
+    -fx-font-size: 13px;
+    -fx-text-fill: #6e6e73;
+}
+
+.dashboard .focusRulesStrictMode {
+    -fx-background-color: #111827;
+    -fx-background-radius: 12;
+    -fx-border-color: transparent;
+    -fx-border-radius: 12;
+    -fx-padding: 8 12 8 12;
+    -fx-cursor: hand;
+}
+
+.dashboard .focusRulesStrictMode:hover,
+.dashboard .focusRulesStrictMode:focused {
+    -fx-background-color: #1f2937;
+}
+
+.dashboard .focusRulesStrictMode .focusRulesStrictModeTitle {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
+}
+
+.dashboard .focusRulesStrictMode .focusRulesStrictModeDescription {
+    -fx-font-size: 10px;
+    -fx-text-fill: #9ca3af;
+}
+
+.dashboard .focusRulesStrictMode .focusRulesStrictModeChevron {
+    -fx-font-size: 15px;
+    -fx-text-fill: #6b7280;
+}
+
+.dashboard .focusProtectionCard {
+    -fx-padding: 16;
+    -fx-spacing: 0;
+}
+
+.dashboard .focusProtectionIconTile {
+    -fx-background-color: #ecfdf3;
+    -fx-background-radius: 12;
+}
+
+.dashboard .focusProtectionTitle,
+.dashboard .focusSiteTitle {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1c1c1e;
+}
+
+.dashboard .focusProtectionDescription {
+    -fx-font-size: 12px;
+    -fx-text-fill: #6e6e73;
+}
+
+.dashboard .focusProtectionActiveBadge {
+    -fx-background-color: #ecfdf3;
+    -fx-background-radius: 999;
+    -fx-border-color: #bbf7d0;
+    -fx-border-radius: 999;
+    -fx-padding: 2 8 2 8;
+    -fx-spacing: 5;
+}
+
+.dashboard .focusProtectionActiveText {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #15803d;
+}
+
+.dashboard .figmaLargeSwitch > .check-box > .box {
+    -fx-min-width: 48;
+    -fx-pref-width: 48;
+    -fx-max-width: 48;
+    -fx-min-height: 24;
+    -fx-pref-height: 24;
+    -fx-max-height: 24;
+}
+
+.dashboard .figmaLargeSwitch > .check-box > .box > .mark {
+    -fx-min-width: 20;
+    -fx-pref-width: 20;
+    -fx-max-width: 20;
+    -fx-min-height: 20;
+    -fx-pref-height: 20;
+    -fx-max-height: 20;
+    -fx-translate-x: -11;
+}
+
+.dashboard .figmaLargeSwitch > .check-box:selected > .box > .mark {
+    -fx-translate-x: 11;
+}
+
+.dashboard .focusRulesCard {
+    -fx-padding: 20;
+    -fx-spacing: 16;
+}
+
+.dashboard .focusRulesCard.focusRuleDisabled {
+    -fx-opacity: 0.50;
+}
+
+.dashboard .focusSiteBadge {
+    -fx-background-radius: 12;
+}
+
+.dashboard .focusSiteBadge.instagramBadge {
+    -fx-background-color: linear-gradient(to bottom right, #f472b6, #7c3aed);
+}
+
+.dashboard .focusSiteBadge.youtubeBadge {
+    -fx-background-color: #dc2626;
+}
+
+.dashboard .focusSiteBadge.xBadge {
+    -fx-background-color: #171717;
+}
+
+.dashboard .focusSiteBadgeText {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
+}
+
+.dashboard .label.focusRulesRoute {
+    -fx-font-size: 11px;
+    -fx-text-fill: #9ca3af;
+}
+
+.dashboard .focusCardDivider {
+    -fx-background-color: #f3f4f6;
+}
+
+.dashboard .focusSectionLabel {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #9ca3af;
+}
+
+.dashboard .focusSensitivityHint {
+    -fx-font-size: 11px;
+    -fx-text-fill: #9ca3af;
+}
+
+.dashboard .figmaStepperButton {
+    -fx-background-radius: 7;
+    -fx-border-radius: 7;
+    -fx-text-fill: #6b7280;
+    -fx-font-size: 13px;
+}
+
+.dashboard .figmaStepperField {
+    -fx-font-size: 13px;
+    -fx-text-fill: #1c1c1e;
+}
+
+.dashboard .figmaSegmented {
+    -fx-background-radius: 9;
+    -fx-padding: 3;
+    -fx-spacing: 2;
+}
+
+.dashboard .figmaSegmentedOption {
+    -fx-background-radius: 7;
+    -fx-padding: 5 8 5 8;
+    -fx-text-fill: #6b7280;
+}
+
+.dashboard .figmaSegmentedOption:selected {
+    -fx-text-fill: #1c1c1e;
+}
+
+.dashboard .figmaIntervention {
+    -fx-font-size: 12px;
+    -fx-text-fill: #374151;
+}
+
+.dashboard .figmaIntervention > .box {
+    -fx-min-width: 16;
+    -fx-pref-width: 16;
+    -fx-max-width: 16;
+    -fx-min-height: 16;
+    -fx-pref-height: 16;
+    -fx-max-height: 16;
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 4;
+    -fx-border-color: #d1d5db;
+    -fx-border-radius: 4;
+}
+
+.dashboard .figmaIntervention:selected > .box {
+    -fx-background-color: #16a34a;
+    -fx-border-color: #16a34a;
+}
+
+.dashboard .figmaIntervention:selected > .box > .mark {
+    -fx-background-color: #ffffff;
+}
+
+.dashboard .focusBlockDuration {
+    -fx-background-color: #fffbeb;
+    -fx-background-radius: 999;
+    -fx-border-color: #fde68a;
+    -fx-border-radius: 999;
+    -fx-padding: 5 10 5 10;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #b45309;
+}
+
+.dashboard .focusRulesStatusBar {
+    -fx-background-color: #f0efe9;
+    -fx-border-color: rgba(0, 0, 0, 0.06) transparent transparent transparent;
+    -fx-min-height: 40;
+    -fx-pref-height: 40;
+    -fx-max-height: 40;
+}
+
+.dashboard .focusRulesStatusBar .label {
+    -fx-font-size: 11px;
+    -fx-text-fill: #6e6e73;
+}
+
+.dashboard .focusRulesStatusGlyph {
+    -fx-alignment: center;
+    -fx-min-width: 13;
+    -fx-pref-width: 13;
+    -fx-max-width: 13;
+    -fx-min-height: 13;
+    -fx-pref-height: 13;
+    -fx-max-height: 13;
+    -fx-background-radius: 999;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+}
+
+.dashboard .focusRulesStatusGlyph.successState {
+    -fx-background-color: #22c55e;
+    -fx-text-fill: #ffffff;
+}
+
+.dashboard .focusRulesStatusGlyph.pendingState {
+    -fx-background-color: #fef3c7;
+    -fx-text-fill: #9a6700;
+}
+
+.dashboard .focusRulesStatusGlyph.errorState {
+    -fx-background-color: #fee2e2;
+    -fx-text-fill: #a23a25;
+}
+
+.dashboard .focusRulesStatusBar .label.pendingState {
+    -fx-text-fill: #9a6700;
+}
+
+.dashboard .focusRulesStatusBar .label.successState {
+    -fx-text-fill: #2f6d45;
+    -fx-font-weight: bold;
+}
+
+.dashboard .focusRulesStatusBar .label.errorState {
+    -fx-text-fill: #a23a25;
+}
