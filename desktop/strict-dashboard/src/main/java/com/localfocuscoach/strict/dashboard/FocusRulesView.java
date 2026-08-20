@@ -21,6 +21,7 @@ import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -28,35 +29,53 @@ import javafx.util.Duration;
 
 public final class FocusRulesView extends BorderPane {
     private static final Duration CHROME_SYNC_POLL_INTERVAL = Duration.seconds(1);
+    private static final Duration AUTO_SAVE_DELAY = Duration.millis(700);
 
     private final ServiceClient client;
     private final Runnable showStrictMode;
     private final PauseTransition chromeSyncPoll;
+    private final PauseTransition autoSaveDebounce;
     private final CheckBox protectionEnabled = new CheckBox("Protection enabled");
     private final Label feedback = new Label("Loading Focus Rules…");
     private final Label chromeSyncStatus = new Label();
-    private final Button save = new Button("Save Focus Rules");
+    private final Label saveStatus = new Label();
     private final EnumMap<FocusSite, RuleControls> rules = new EnumMap<>(FocusSite.class);
     private boolean disposed;
     private boolean chromeSyncPending;
     private boolean refreshInFlight;
     private boolean saveInFlight;
+    private boolean renderingSnapshot;
+    private boolean saveQueuedAfterInFlight;
     private long draftGeneration;
     private long responseGeneration;
 
     public FocusRulesView(ServiceClient client, Runnable showStrictMode) {
-        this(client, showStrictMode, CHROME_SYNC_POLL_INTERVAL);
+        this(client, showStrictMode, CHROME_SYNC_POLL_INTERVAL, AUTO_SAVE_DELAY);
     }
 
     FocusRulesView(ServiceClient client, Runnable showStrictMode, Duration chromeSyncPollInterval) {
+        this(client, showStrictMode, chromeSyncPollInterval, AUTO_SAVE_DELAY);
+    }
+
+    FocusRulesView(
+            ServiceClient client,
+            Runnable showStrictMode,
+            Duration chromeSyncPollInterval,
+            Duration autoSaveDelay) {
         this.client = Objects.requireNonNull(client);
         this.showStrictMode = Objects.requireNonNull(showStrictMode);
         Objects.requireNonNull(chromeSyncPollInterval);
+        Objects.requireNonNull(autoSaveDelay);
         if (chromeSyncPollInterval.lessThanOrEqualTo(Duration.ZERO)) {
             throw new IllegalArgumentException("Chrome sync poll interval must be positive");
         }
+        if (autoSaveDelay.lessThanOrEqualTo(Duration.ZERO)) {
+            throw new IllegalArgumentException("Auto-save delay must be positive");
+        }
         chromeSyncPoll = new PauseTransition(chromeSyncPollInterval);
         chromeSyncPoll.setOnFinished(event -> pollChromeSyncStatus());
+        autoSaveDebounce = new PauseTransition(autoSaveDelay);
+        autoSaveDebounce.setOnFinished(event -> saveChangedDraft());
         setStyle("-fx-background-color: #f7f7f4;");
         render();
         refresh();
@@ -116,6 +135,7 @@ public final class FocusRulesView extends BorderPane {
         disposed = true;
         responseGeneration++;
         chromeSyncPoll.stop();
+        autoSaveDebounce.stop();
     }
 
     private void render() {
@@ -131,28 +151,32 @@ public final class FocusRulesView extends BorderPane {
                 showStrictMode.run();
             }
         });
-        var heading = new VBox(8, new HBox(12, title, strictMode), description);
+        var strictModeContainer = new HBox(strictMode);
+        strictModeContainer.setId("focusRulesStrictMode");
+        var heading = new VBox(8, new HBox(12, title, strictModeContainer), description);
+        heading.setId("focusRulesHeader");
         heading.setPadding(new Insets(28, 32, 14, 32));
         setTop(heading);
 
         protectionEnabled.setId("focusProtectionEnabled");
-        var cards = new VBox(16, protectionEnabled);
-        cards.setPadding(new Insets(12, 32, 12, 32));
+        var cards = new FlowPane(16, 16);
+        cards.setId("focusRulesCards");
+        cards.setPrefWrapLength(860);
         for (var site : FocusSite.values()) {
             var controls = createRuleControls(site);
             rules.put(site, controls);
             cards.getChildren().add(controls.card());
         }
-        setCenter(cards);
+        var content = new VBox(16, protectionEnabled, cards);
+        content.setPadding(new Insets(12, 32, 12, 32));
+        setCenter(content);
 
         chromeSyncStatus.setId("chromeSyncStatus");
         feedback.setId("focusSettingsFeedback");
         feedback.setWrapText(true);
         feedback.setStyle("-fx-text-fill: #8a331f;");
-        save.setId("saveFocusRules");
-        save.setDefaultButton(true);
-        save.setOnAction(event -> save());
-        var footer = new VBox(8, chromeSyncStatus, feedback, save);
+        saveStatus.setId("focusSaveStatus");
+        var footer = new VBox(8, saveStatus, chromeSyncStatus, feedback);
         footer.setPadding(new Insets(14, 32, 28, 32));
         setBottom(footer);
         trackDraftChanges();
@@ -200,6 +224,7 @@ public final class FocusRulesView extends BorderPane {
                 interventionList,
                 blockDuration);
         card.getStyleClass().add("focusSiteRule");
+        card.getStyleClass().add("focusRulesCard");
         card.setId(metadata.prefix() + "Rule");
         card.setPadding(new Insets(18));
         card.setStyle(
@@ -226,20 +251,25 @@ public final class FocusRulesView extends BorderPane {
     }
 
     private void renderSnapshot(FocusSettingsSnapshot snapshot) {
-        var settings = snapshot.settings();
-        protectionEnabled.setSelected(settings.enabled());
-        for (var site : FocusSite.values()) {
-            var rule = settings.rules().get(site);
-            var controls = rules.get(site);
-            controls.enabled().setSelected(rule.enabled());
-            controls.budget().setText(Integer.toString(rule.doomscrollBudgetMinutes()));
-            controls.renderSensitivity(rule.warningScore());
-            controls.gracePeriod().setText(Integer.toString(rule.gracePeriodSeconds()));
-            for (var intervention : FocusIntervention.values()) {
-                controls.interventions()
-                        .get(intervention)
-                        .setSelected(rule.interventions().contains(intervention));
+        renderingSnapshot = true;
+        try {
+            var settings = snapshot.settings();
+            protectionEnabled.setSelected(settings.enabled());
+            for (var site : FocusSite.values()) {
+                var rule = settings.rules().get(site);
+                var controls = rules.get(site);
+                controls.enabled().setSelected(rule.enabled());
+                controls.budget().setText(Integer.toString(rule.doomscrollBudgetMinutes()));
+                controls.renderSensitivity(rule.warningScore());
+                controls.gracePeriod().setText(Integer.toString(rule.gracePeriodSeconds()));
+                for (var intervention : FocusIntervention.values()) {
+                    controls.interventions()
+                            .get(intervention)
+                            .setSelected(rule.interventions().contains(intervention));
+                }
             }
+        } finally {
+            renderingSnapshot = false;
         }
         renderChromeSyncStatus(snapshot);
         feedback.setText("");
@@ -263,8 +293,20 @@ public final class FocusRulesView extends BorderPane {
         }
     }
 
-    private void save() {
-        if (disposed || saveInFlight) {
+    private void changedDraft() {
+        if (renderingSnapshot || disposed) {
+            return;
+        }
+        draftGeneration++;
+        autoSaveDebounce.playFromStart();
+    }
+
+    private void saveChangedDraft() {
+        if (disposed) {
+            return;
+        }
+        if (saveInFlight) {
+            saveQueuedAfterInFlight = true;
             return;
         }
         var proposedRules = new EnumMap<FocusSite, FocusRule>(FocusSite.class);
@@ -306,79 +348,62 @@ public final class FocusRulesView extends BorderPane {
         var submittedDraftGeneration = draftGeneration;
         saveInFlight = true;
         chromeSyncPoll.stop();
-        setFormDisabled(true);
-        feedback.setText("Saving Focus Rules…");
+        saveStatus.setText("Saving changes…");
+        feedback.setText("");
         var generation = ++responseGeneration;
         client.saveFocusSettingsAsync(payload, (response, failure) -> {
             if (disposed || generation != responseGeneration) {
                 return;
             }
             saveInFlight = false;
-            setFormDisabled(false);
             if (failure != null || response == null) {
                 feedback.setText("Could not save Focus Rules");
                 scheduleChromeSyncPoll();
-                return;
-            }
-            if ("error.focusSettingsWeakening".equals(response.type())) {
+            } else if ("error.focusSettingsWeakening".equals(response.type())) {
                 feedback.setText(
                         "Strict Mode is active, so settings cannot be made less protective.");
                 scheduleChromeSyncPoll();
-                return;
-            }
-            if (!"service.focusSettings".equals(response.type())) {
+            } else if (!"service.focusSettings".equals(response.type())) {
                 feedback.setText("Could not save Focus Rules");
                 scheduleChromeSyncPoll();
-                return;
-            }
-            try {
-                var snapshot = parseSnapshot(response.payload());
-                if (draftGeneration == submittedDraftGeneration) {
-                    renderSnapshot(snapshot);
-                } else {
-                    renderChromeSyncStatus(snapshot);
+            } else {
+                try {
+                    var snapshot = parseSnapshot(response.payload());
+                    if (draftGeneration == submittedDraftGeneration) {
+                        renderSnapshot(snapshot);
+                    } else {
+                        renderChromeSyncStatus(snapshot);
+                    }
+                    saveStatus.setText("Saved");
+                } catch (IllegalArgumentException exception) {
+                    feedback.setText("Could not save Focus Rules");
+                    scheduleChromeSyncPoll();
                 }
-                feedback.setText("Focus Rules saved");
-            } catch (IllegalArgumentException exception) {
-                feedback.setText("Could not save Focus Rules");
-                scheduleChromeSyncPoll();
+            }
+            if (saveQueuedAfterInFlight) {
+                saveQueuedAfterInFlight = false;
+                saveChangedDraft();
             }
         });
     }
 
     private void trackDraftChanges() {
         protectionEnabled.selectedProperty().addListener(
-                (observable, previous, current) -> draftGeneration++);
+                (observable, previous, current) -> changedDraft());
         for (var controls : rules.values()) {
             controls.enabled().selectedProperty().addListener(
-                    (observable, previous, current) -> draftGeneration++);
+                    (observable, previous, current) -> changedDraft());
             controls.budget().textProperty().addListener(
-                    (observable, previous, current) -> draftGeneration++);
+                    (observable, previous, current) -> changedDraft());
             for (var sensitivity : controls.sensitivityButtons().values()) {
                 sensitivity.selectedProperty().addListener(
-                        (observable, previous, current) -> draftGeneration++);
+                        (observable, previous, current) -> changedDraft());
             }
             controls.gracePeriod().textProperty().addListener(
-                    (observable, previous, current) -> draftGeneration++);
+                    (observable, previous, current) -> changedDraft());
             for (var intervention : controls.interventions().values()) {
                 intervention.selectedProperty().addListener(
-                        (observable, previous, current) -> draftGeneration++);
-            }
-        }
-    }
-
-    private void setFormDisabled(boolean disabled) {
-        protectionEnabled.setDisable(disabled);
-        save.setDisable(disabled);
-        for (var controls : rules.values()) {
-            controls.enabled().setDisable(disabled);
-            controls.budget().setDisable(disabled);
-            for (var sensitivity : controls.sensitivityButtons().values()) {
-                sensitivity.setDisable(disabled);
-            }
-            controls.gracePeriod().setDisable(disabled);
-            for (var intervention : controls.interventions().values()) {
-                intervention.setDisable(disabled);
+                        (observable, previous, current) -> changedDraft());
             }
         }
     }
