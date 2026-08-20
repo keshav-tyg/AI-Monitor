@@ -1,8 +1,10 @@
 package com.localfocuscoach.strict.dashboard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
 import java.util.List;
@@ -28,6 +30,11 @@ class DashboardAppTest {
         try {
             FxTestSupport.call(() -> {
                 assertEquals(Color.web("#1f2937"), ((Label) dashboard.lookup(".label")).getTextFill());
+                var privacy = (Label) dashboard.lookup("#dashboardPrivacy");
+                assertEquals(
+                        "Your browsing history and personal data never leave this device.",
+                        privacy.getText());
+                assertEquals(Color.web("#6b7280"), privacy.getTextFill());
                 return null;
             });
         } finally {
@@ -50,8 +57,14 @@ class DashboardAppTest {
                     "default Focus Rules screen");
 
             FxTestSupport.call(() -> {
+                assertNotNull(dashboard.lookup("#dashboardSidebar"));
+                assertNotNull(dashboard.lookup("#dashboardBrand"));
+                assertNotNull(dashboard.lookup("#dashboardPrivacy"));
                 assertNotNull(dashboard.lookup("#focusRulesNavigation"));
                 assertNotNull(dashboard.lookup("#strictModeNavigation"));
+                assertTrue(((Button) dashboard.lookup("#focusRulesNavigation"))
+                        .getStyleClass().contains("activeNavigation"));
+                assertFalse(((Button) dashboard.lookup("#strictModeNavigation")).isDisable());
                 ((Button) dashboard.lookup("#strictModeNavigation")).fire();
                 return null;
             });
@@ -59,6 +72,15 @@ class DashboardAppTest {
                     () -> dashboard.lookup("#durationMinutes") != null,
                     "Strict Mode screen");
             assertNull(FxTestSupport.call(() -> dashboard.lookup("#focusProtectionEnabled")));
+            FxTestSupport.call(() -> {
+                var focusRules = (Button) dashboard.lookup("#focusRulesNavigation");
+                var strictMode = (Button) dashboard.lookup("#strictModeNavigation");
+                assertTrue(strictMode.getStyleClass().contains("activeNavigation"));
+                assertFalse(focusRules.getStyleClass().contains("activeNavigation"));
+                assertFalse(focusRules.isDisable());
+                assertFalse(strictMode.isDisable());
+                return null;
+            });
 
             FxTestSupport.call(() -> {
                 ((Button) dashboard.lookup("#focusRulesNavigation")).fire();
