@@ -3,6 +3,7 @@ package com.localfocuscoach.strict.dashboard;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
@@ -20,6 +21,7 @@ import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
 import javafx.util.Duration;
 import org.junit.jupiter.api.Test;
@@ -39,7 +41,7 @@ class FocusRulesViewTest {
                 assertNotNull(view.lookup("#focusProtectionEnabled"));
                 assertEquals(3, view.lookupAll(".focusSiteRule").size());
                 assertEquals("5", ((TextField) view.lookup("#instagramReelsBudget")).getText());
-                assertEquals("10", ((TextField) view.lookup("#xTimelineWarningScore")).getText());
+                assertTrue(((RadioButton) view.lookup("#xTimelineSensitivityMild")).isSelected());
                 assertEquals("60", ((TextField) view.lookup("#youtubeShortsGracePeriod")).getText());
                 assertEquals(
                         "Block until tomorrow",
@@ -79,7 +81,7 @@ class FocusRulesViewTest {
     }
 
     @Test
-    void validatesEveryNumericRangeAndEnabledRuleBeforeSendingSave() {
+    void validatesEveryRemainingNumericRangeAndEnabledRuleBeforeSendingSave() {
         var requests = new CopyOnWriteArrayList<ProtocolMessage>();
         var client = client(requests);
         var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
@@ -88,13 +90,6 @@ class FocusRulesViewTest {
             requests.clear();
 
             FxTestSupport.call(() -> {
-                setText(view, "#instagramReelsWarningScore", "0");
-                fire(view, "#saveFocusRules");
-                assertEquals(
-                        "Warning score must be 1 to 50",
-                        textOnFxThread(view, "#focusSettingsFeedback"));
-
-                setText(view, "#instagramReelsWarningScore", "10");
                 setText(view, "#xTimelineGracePeriod", "601");
                 fire(view, "#saveFocusRules");
                 assertEquals(
@@ -139,7 +134,7 @@ class FocusRulesViewTest {
                 ((CheckBox) view.lookup("#focusProtectionEnabled")).setSelected(false);
                 ((CheckBox) view.lookup("#instagramReelsEnabled")).setSelected(true);
                 setText(view, "#instagramReelsBudget", "4");
-                setText(view, "#instagramReelsWarningScore", "9");
+                ((RadioButton) view.lookup("#instagramReelsSensitivityMedium")).fire();
                 setText(view, "#instagramReelsGracePeriod", "30");
                 ((CheckBox) view.lookup("#instagramReelsPause")).setSelected(false);
                 fire(view, "#saveFocusRules");
@@ -163,7 +158,7 @@ class FocusRulesViewTest {
             @SuppressWarnings("unchecked")
             var instagram = (Map<String, Object>) rules.get("instagram-reels");
             assertEquals(4, instagram.get("doomscrollBudgetMinutes"));
-            assertEquals(9, instagram.get("warningScore"));
+            assertEquals(5, instagram.get("warningScore"));
             assertEquals(30, instagram.get("gracePeriodSeconds"));
             assertEquals(
                     List.of("notify", "close-tab", "block"),
@@ -305,6 +300,86 @@ class FocusRulesViewTest {
                     "6",
                     FxTestSupport.call(() -> ((TextField) view.lookup("#instagramReelsBudget"))
                             .getText()));
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void selectingMediumSavesItsCanonicalWarningScore() {
+        var requests = new CopyOnWriteArrayList<ProtocolMessage>();
+        var client = client(requests);
+        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        try {
+            waitUntilLoaded(view);
+            requests.clear();
+
+            FxTestSupport.call(() -> {
+                assertNotNull(view.lookup("#instagramReelsSensitivityMild"));
+                assertNull(view.lookup("#instagramReelsWarningScore"));
+                assertTrue(((RadioButton) view.lookup("#instagramReelsSensitivityMild")).isSelected());
+                ((RadioButton) view.lookup("#instagramReelsSensitivityMedium")).fire();
+                fire(view, "#saveFocusRules");
+                return null;
+            });
+            FxTestSupport.waitFor(() -> !requests.isEmpty(), "Focus Rules save request");
+
+            assertEquals(5, instagramRule(requests.getFirst()).get("warningScore"));
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void savingAnotherFieldPreservesAnUntouchedLegacyWarningScore() {
+        var requests = new CopyOnWriteArrayList<ProtocolMessage>();
+        var client = new ServiceClient(SECRET, request -> {
+            requests.add(request);
+            return focusSettingsResponse(3L, 3L, settingsPayload(5, 8));
+        });
+        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        try {
+            waitUntilLoaded(view);
+            requests.clear();
+
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                fire(view, "#saveFocusRules");
+                return null;
+            });
+            FxTestSupport.waitFor(() -> !requests.isEmpty(), "Focus Rules save request");
+
+            assertEquals(8, instagramRule(requests.getFirst()).get("warningScore"));
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void weakeningSensitivitySaveLeavesTheAggressiveToMildDraftVisible() {
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                return new ProtocolMessage(1, SECRET, "error.focusSettingsWeakening", Map.of());
+            }
+            return focusSettingsResponse(3L, 3L, settingsPayload(5, 1));
+        });
+        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                assertTrue(((RadioButton) view.lookup("#instagramReelsSensitivityAggressive"))
+                        .isSelected());
+                ((RadioButton) view.lookup("#instagramReelsSensitivityMild")).fire();
+                fire(view, "#saveFocusRules");
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> "Strict Mode is active, so settings cannot be made less protective."
+                            .equals(text(view, "#focusSettingsFeedback")),
+                    "Strict Mode sensitivity restriction");
+
+            assertTrue(FxTestSupport.call(
+                    () -> ((RadioButton) view.lookup("#instagramReelsSensitivityMild")).isSelected()));
         } finally {
             dispose(view, client);
         }
@@ -503,10 +578,14 @@ class FocusRulesViewTest {
     }
 
     private static Map<String, Object> settingsPayload(int budget) {
+        return settingsPayload(budget, 10);
+    }
+
+    private static Map<String, Object> settingsPayload(int budget, int warningScore) {
         var rule = Map.<String, Object>of(
                 "enabled", true,
                 "doomscrollBudgetMinutes", budget,
-                "warningScore", 10,
+                "warningScore", warningScore,
                 "gracePeriodSeconds", 60,
                 "interventions", List.of("notify", "pause", "close-tab", "block"));
         var rules = new LinkedHashMap<String, Object>();
@@ -539,6 +618,13 @@ class FocusRulesViewTest {
 
     private static void fire(FocusRulesView view, String id) {
         ((Button) view.lookup(id)).fire();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> instagramRule(ProtocolMessage request) {
+        var settings = (Map<String, Object>) request.payload().get("settings");
+        var rules = (Map<String, Object>) settings.get("rules");
+        return (Map<String, Object>) rules.get("instagram-reels");
     }
 
     private static void await(CountDownLatch latch) {
