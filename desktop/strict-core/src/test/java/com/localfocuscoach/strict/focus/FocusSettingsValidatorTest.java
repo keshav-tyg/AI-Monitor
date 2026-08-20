@@ -72,6 +72,31 @@ class FocusSettingsValidatorTest {
     }
 
     @Test
+    void appliesStrictModeToThePersistedNumericWarningScores() {
+        var existingRule = new FocusRule(
+                true,
+                5,
+                10,
+                60,
+                List.of(FocusIntervention.NOTIFY, FocusIntervention.PAUSE, FocusIntervention.CLOSE_TAB));
+        var stricterRule = new FocusRule(
+                true,
+                5,
+                5,
+                60,
+                List.of(FocusIntervention.NOTIFY, FocusIntervention.PAUSE, FocusIntervention.CLOSE_TAB));
+        var weakerRule = new FocusRule(
+                true,
+                5,
+                10,
+                60,
+                List.of(FocusIntervention.NOTIFY, FocusIntervention.PAUSE, FocusIntervention.CLOSE_TAB));
+
+        assertFalse(validator.isWeakening(settings(true, existingRule), settings(true, stricterRule)));
+        assertTrue(validator.isWeakening(settings(true, stricterRule), settings(true, weakerRule)));
+    }
+
+    @Test
     void acceptsAllConfiguredBoundaryValues() {
         assertDoesNotThrow(() -> validator.parse(settingsWith("doomscrollBudgetMinutes", 60)));
         assertDoesNotThrow(() -> validator.parse(settingsWith("warningScore", 1)));
