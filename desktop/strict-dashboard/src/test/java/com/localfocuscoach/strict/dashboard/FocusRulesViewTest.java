@@ -33,12 +33,17 @@ class FocusRulesViewTest {
     void rendersMasterToggleAndAllThreeSiteCardsFromServiceSettings() {
         var requests = new CopyOnWriteArrayList<ProtocolMessage>();
         var client = client(requests);
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
 
             FxTestSupport.call(() -> {
                 assertNotNull(view.lookup("#focusProtectionEnabled"));
+                assertNotNull(view.lookup("#focusRulesHeader"));
+                assertNotNull(view.lookup("#focusRulesStrictMode"));
+                assertNotNull(view.lookup("#focusRulesCards"));
+                assertNotNull(view.lookup("#focusSaveStatus"));
+                assertNull(view.lookup("#saveFocusRules"));
                 assertEquals(3, view.lookupAll(".focusSiteRule").size());
                 assertEquals("5", ((TextField) view.lookup("#instagramReelsBudget")).getText());
                 assertTrue(((RadioButton) view.lookup("#xTimelineSensitivityMild")).isSelected());
@@ -60,21 +65,21 @@ class FocusRulesViewTest {
     void invalidBudgetDoesNotSendSaveAndReportsTheExactRange() {
         var requests = new CopyOnWriteArrayList<ProtocolMessage>();
         var client = client(requests);
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             requests.clear();
 
             FxTestSupport.call(() -> {
                 ((TextField) view.lookup("#instagramReelsBudget")).setText("61");
-                ((Button) view.lookup("#saveFocusRules")).fire();
                 return null;
             });
 
-            assertEquals(0, requests.size());
-            assertEquals(
-                    "Doomscroll session budget must be 1 to 60 minutes",
-                    text(view, "#focusSettingsFeedback"));
+            FxTestSupport.waitFor(
+                    () -> "Doomscroll session budget must be 1 to 60 minutes"
+                            .equals(text(view, "#focusSettingsFeedback")),
+                    "invalid budget validation");
+            assertTrue(requests.isEmpty());
         } finally {
             dispose(view, client);
         }
@@ -84,28 +89,31 @@ class FocusRulesViewTest {
     void validatesEveryRemainingNumericRangeAndEnabledRuleBeforeSendingSave() {
         var requests = new CopyOnWriteArrayList<ProtocolMessage>();
         var client = client(requests);
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             requests.clear();
 
             FxTestSupport.call(() -> {
                 setText(view, "#xTimelineGracePeriod", "601");
-                fire(view, "#saveFocusRules");
-                assertEquals(
-                        "Grace period must be 0 to 600 seconds",
-                        textOnFxThread(view, "#focusSettingsFeedback"));
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> "Grace period must be 0 to 600 seconds"
+                            .equals(text(view, "#focusSettingsFeedback")),
+                    "invalid grace-period validation");
 
+            FxTestSupport.call(() -> {
                 setText(view, "#xTimelineGracePeriod", "60");
                 for (var suffix : List.of("Notify", "Pause", "CloseTab", "Block")) {
                     ((CheckBox) view.lookup("#youtubeShorts" + suffix)).setSelected(false);
                 }
-                fire(view, "#saveFocusRules");
-                assertEquals(
-                        "An enabled rule needs at least one intervention",
-                        textOnFxThread(view, "#focusSettingsFeedback"));
                 return null;
             });
+            FxTestSupport.waitFor(
+                    () -> "An enabled rule needs at least one intervention"
+                            .equals(text(view, "#focusSettingsFeedback")),
+                    "missing intervention validation");
 
             assertTrue(requests.isEmpty());
         } finally {
@@ -125,7 +133,7 @@ class FocusRulesViewTest {
             }
             return focusSettingsResponse(3L, 3L);
         });
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             requests.clear();
@@ -137,11 +145,10 @@ class FocusRulesViewTest {
                 ((RadioButton) view.lookup("#instagramReelsSensitivityMedium")).fire();
                 setText(view, "#instagramReelsGracePeriod", "30");
                 ((CheckBox) view.lookup("#instagramReelsPause")).setSelected(false);
-                fire(view, "#saveFocusRules");
                 return null;
             });
             FxTestSupport.waitFor(
-                    () -> "Focus Rules saved".equals(text(view, "#focusSettingsFeedback")),
+                    () -> "Saved".equals(text(view, "#focusSaveStatus")),
                     "successful Focus Rules save");
 
             assertEquals(1, requests.size());
@@ -170,13 +177,36 @@ class FocusRulesViewTest {
     }
 
     @Test
-    void pendingSaveIsolatesTheSubmittedDraftUntilCompletion() throws Exception {
-        var saveRequests = new AtomicInteger();
+    void autoSaveUsesTheLatestValueWhenTheDraftChangesBeforeTheDelayExpires() {
+        var requests = new CopyOnWriteArrayList<ProtocolMessage>();
+        var client = client(requests);
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            requests.clear();
+
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                setText(view, "#instagramReelsBudget", "6");
+                return null;
+            });
+            FxTestSupport.waitFor(() -> !requests.isEmpty(), "latest draft auto-save request");
+
+            assertEquals(1, requests.size());
+            assertEquals(6, instagramRule(requests.getFirst()).get("doomscrollBudgetMinutes"));
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void editsDuringAnInFlightSaveQueueOneLatestDraftWithoutDisablingControls() throws Exception {
+        var saves = new CopyOnWriteArrayList<ProtocolMessage>();
         var saveStarted = new CountDownLatch(1);
         var releaseSave = new CountDownLatch(1);
         var client = new ServiceClient(SECRET, request -> {
             if ("dashboard.focusSettings.save".equals(request.type())) {
-                saveRequests.incrementAndGet();
+                saves.add(request);
                 saveStarted.countDown();
                 await(releaseSave);
                 @SuppressWarnings("unchecked")
@@ -185,12 +215,11 @@ class FocusRulesViewTest {
             }
             return focusSettingsResponse(3L, 3L);
         });
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             FxTestSupport.call(() -> {
                 setText(view, "#instagramReelsBudget", "4");
-                fire(view, "#saveFocusRules");
                 return null;
             });
             assertTrue(saveStarted.await(1, TimeUnit.SECONDS));
@@ -198,33 +227,50 @@ class FocusRulesViewTest {
             FxTestSupport.call(() -> {
                 var budget = (TextField) view.lookup("#instagramReelsBudget");
                 var protection = (CheckBox) view.lookup("#focusProtectionEnabled");
-                var save = (Button) view.lookup("#saveFocusRules");
-                assertTrue(budget.isDisabled());
-                assertTrue(protection.isDisabled());
-                assertTrue(save.isDisabled());
-
-                // A property mutation cannot stand in for a user edit on a disabled control,
-                // but it proves the response also honors the draft-generation guard.
-                budget.setText("9");
-                save.fire();
+                assertFalse(budget.isDisabled());
+                assertFalse(protection.isDisabled());
+                budget.setText("6");
                 return null;
             });
             releaseSave.countDown();
             FxTestSupport.waitFor(
-                    () -> "Focus Rules saved".equals(text(view, "#focusSettingsFeedback")),
-                    "isolated Focus Rules save");
+                    () -> saves.size() == 2 && "Saved".equals(text(view, "#focusSaveStatus")),
+                    "queued latest Focus Rules save");
 
             FxTestSupport.call(() -> {
                 assertEquals(
-                        "9", ((TextField) view.lookup("#instagramReelsBudget")).getText());
+                        "6", ((TextField) view.lookup("#instagramReelsBudget")).getText());
                 assertFalse(((TextField) view.lookup("#instagramReelsBudget")).isDisabled());
-                assertFalse(((Button) view.lookup("#saveFocusRules")).isDisabled());
                 assertEquals("Synced with Chrome", textOnFxThread(view, "#chromeSyncStatus"));
                 return null;
             });
-            assertEquals(1, saveRequests.get());
+            assertEquals(4, instagramRule(saves.get(0)).get("doomscrollBudgetMinutes"));
+            assertEquals(6, instagramRule(saves.get(1)).get("doomscrollBudgetMinutes"));
         } finally {
             releaseSave.countDown();
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void disposeBeforeTheAutoSaveDelayExpiresPreventsTheSave() throws Exception {
+        var saveStarted = new CountDownLatch(1);
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                saveStarted.countDown();
+            }
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                view.dispose();
+                return null;
+            });
+            assertFalse(saveStarted.await(100, TimeUnit.MILLISECONDS));
+        } finally {
             dispose(view, client);
         }
     }
@@ -265,7 +311,7 @@ class FocusRulesViewTest {
     void unsavedEditableDefaultsRemainWaitingForARealChromeRevision() {
         var client = new ServiceClient(
                 SECRET, request -> focusSettingsResponse(0L, 0L, settingsPayload(5)));
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             assertEquals("Waiting for Chrome", text(view, "#chromeSyncStatus"));
@@ -283,12 +329,11 @@ class FocusRulesViewTest {
             }
             return focusSettingsResponse(3L, 3L);
         });
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             FxTestSupport.call(() -> {
                 setText(view, "#instagramReelsBudget", "6");
-                fire(view, "#saveFocusRules");
                 return null;
             });
             FxTestSupport.waitFor(
@@ -309,7 +354,7 @@ class FocusRulesViewTest {
     void selectingMediumSavesItsCanonicalWarningScore() {
         var requests = new CopyOnWriteArrayList<ProtocolMessage>();
         var client = client(requests);
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             requests.clear();
@@ -319,7 +364,6 @@ class FocusRulesViewTest {
                 assertNull(view.lookup("#instagramReelsWarningScore"));
                 assertTrue(((RadioButton) view.lookup("#instagramReelsSensitivityMild")).isSelected());
                 ((RadioButton) view.lookup("#instagramReelsSensitivityMedium")).fire();
-                fire(view, "#saveFocusRules");
                 return null;
             });
             FxTestSupport.waitFor(() -> !requests.isEmpty(), "Focus Rules save request");
@@ -337,14 +381,13 @@ class FocusRulesViewTest {
             requests.add(request);
             return focusSettingsResponse(3L, 3L, settingsPayload(5, 8));
         });
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             requests.clear();
 
             FxTestSupport.call(() -> {
                 setText(view, "#instagramReelsBudget", "4");
-                fire(view, "#saveFocusRules");
                 return null;
             });
             FxTestSupport.waitFor(() -> !requests.isEmpty(), "Focus Rules save request");
@@ -363,14 +406,13 @@ class FocusRulesViewTest {
             }
             return focusSettingsResponse(3L, 3L, settingsPayload(5, 1));
         });
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             FxTestSupport.call(() -> {
                 assertTrue(((RadioButton) view.lookup("#instagramReelsSensitivityAggressive"))
                         .isSelected());
                 ((RadioButton) view.lookup("#instagramReelsSensitivityMild")).fire();
-                fire(view, "#saveFocusRules");
                 return null;
             });
             FxTestSupport.waitFor(
@@ -393,12 +435,11 @@ class FocusRulesViewTest {
             }
             return focusSettingsResponse(3L, 3L);
         });
-        var view = FxTestSupport.call(() -> new FocusRulesView(client, () -> {}));
+        var view = autoSavingView(client);
         try {
             waitUntilLoaded(view);
             FxTestSupport.call(() -> {
                 setText(view, "#instagramReelsBudget", "4");
-                fire(view, "#saveFocusRules");
                 return null;
             });
             FxTestSupport.waitFor(
@@ -411,8 +452,6 @@ class FocusRulesViewTest {
                             .getText()));
             assertFalse(FxTestSupport.call(
                     () -> ((TextField) view.lookup("#instagramReelsBudget")).isDisabled()));
-            assertFalse(FxTestSupport.call(
-                    () -> ((Button) view.lookup("#saveFocusRules")).isDisabled()));
         } finally {
             dispose(view, client);
         }
@@ -559,6 +598,11 @@ class FocusRulesViewTest {
             requests.add(request);
             return focusSettingsResponse(3L, 3L);
         });
+    }
+
+    private static FocusRulesView autoSavingView(ServiceClient client) {
+        return FxTestSupport.call(
+                () -> new FocusRulesView(client, () -> {}, Duration.seconds(1), Duration.millis(10)));
     }
 
     private static ProtocolMessage focusSettingsResponse(long revision, long appliedRevision) {
