@@ -243,6 +243,11 @@ class StrictModeViewTest {
         FxTestSupport.call(() -> {
             assertEquals("Strict Mode is active", text(view, "#activeTitle"));
             assertEquals("1 hour remaining", text(view, "#sessionCountdown"));
+            var warningCountdown = (Label) view.lookup("#warningCountdown");
+            assertNotNull(warningCountdown);
+            assertFalse(warningCountdown.isVisible());
+            assertFalse(warningCountdown.isManaged());
+            assertEquals(0, view.lookupAll(".strictModeWarningCard").size());
             assertFalse(((Button) view.lookup("#unlockSession")).isVisible());
             return null;
         });

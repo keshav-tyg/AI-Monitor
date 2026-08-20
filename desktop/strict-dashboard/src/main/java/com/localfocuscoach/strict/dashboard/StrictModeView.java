@@ -262,6 +262,9 @@ public final class StrictModeView extends BorderPane {
         var sessionCard = new VBox(14, sessionTitle, detail, sessionCountdown, unlock);
         sessionCard.getStyleClass().add("strictModeCard");
         sessionCard.setPadding(new Insets(20));
+        if (!isWarning) {
+            sessionCard.getChildren().add(warningCountdown);
+        }
 
         var content = new VBox(20, header);
         if (isWarning) {
