@@ -16,13 +16,22 @@ interface LanguageModelSession {
   prompt(input: string, options?: { responseConstraint?: unknown }): Promise<string>;
 }
 
+interface LanguageExpectations {
+  expectedInputs?: { type: 'text'; languages: string[] }[];
+  expectedOutputs?: { type: 'text'; languages: string[] }[];
+}
+
 interface LanguageModelApi {
-  availability(): Promise<Availability>;
-  create(options: {
+  availability(options?: LanguageExpectations): Promise<Availability>;
+  create(options: LanguageExpectations & {
     initialPrompts?: { role: 'system'; content: string }[];
-    expectedOutputs?: { type: 'text'; languages: string[] }[];
   }): Promise<LanguageModelSession>;
 }
+
+const ENGLISH_TEXT_EXPECTATIONS: LanguageExpectations = {
+  expectedInputs: [{ type: 'text', languages: ['en'] }],
+  expectedOutputs: [{ type: 'text', languages: ['en'] }],
+};
 
 /** Output is schema-bound rather than parsed out of free text. */
 const RESPONSE_SCHEMA = {
@@ -71,13 +80,11 @@ async function ensureSession(): Promise<LanguageModelSession | undefined> {
   try {
     // Anything short of `available` is treated as unavailable: a download in
     // progress must not stall an answer the declaration does not need.
-    if ((await model.availability()) !== 'available') return undefined;
+    if ((await model.availability(ENGLISH_TEXT_EXPECTATIONS)) !== 'available') return undefined;
 
     session = await model.create({
+      ...ENGLISH_TEXT_EXPECTATIONS,
       initialPrompts: [{ role: 'system', content: SYSTEM_PROMPT }],
-      // Without a declared output language Chrome degrades output quality and
-      // safety attestation.
-      expectedOutputs: [{ type: 'text', languages: ['en'] }],
     });
     return session;
   } catch {
@@ -125,7 +132,7 @@ export async function handleClassify(payload: ClassifierPayload): Promise<Classi
     // Report why, so the worker can stop creating this document at all.
     let availability: Availability = 'unavailable';
     try {
-      availability = await model.availability();
+      availability = await model.availability(ENGLISH_TEXT_EXPECTATIONS);
     } catch {
       availability = 'unavailable';
     }
