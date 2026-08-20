@@ -2,6 +2,7 @@ package com.localfocuscoach.strict.dashboard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
@@ -116,6 +117,17 @@ class StrictModeViewTest {
     }
 
     @Test
+    void idleModeRendersTheStrictModeHeaderAndCard() {
+        var view = idleView(new ArrayList<>());
+
+        FxTestSupport.call(() -> {
+            assertNotNull(view.lookup("#strictModeHeader"));
+            assertEquals(1, view.lookupAll(".strictModeCard").size());
+            return null;
+        });
+    }
+
+    @Test
     void timedStartRejectsAnImpracticallyLargeDuration() {
         var starts = new ArrayList<ProtocolMessage>();
         var view = idleView(starts);
@@ -207,6 +219,7 @@ class StrictModeViewTest {
             assertEquals("Restore the Chrome extension", text(view, "#activeTitle"));
             assertEquals("25 seconds remaining", text(view, "#warningCountdown"));
             assertTrue(((Button) view.lookup("#unlockSession")).isVisible());
+            assertEquals(1, view.lookupAll(".strictModeWarningCard").size());
             return null;
         });
     }

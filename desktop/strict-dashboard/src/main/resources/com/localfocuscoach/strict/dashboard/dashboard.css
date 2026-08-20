@@ -101,3 +101,40 @@
     -fx-background-color: transparent;
     -fx-background: transparent;
 }
+
+.strictModeTitle,
+.unlockChallengeTitle {
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+}
+
+.strictModeCardTitle {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.strictModeCard,
+.unlockChallengeCard {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d8d8d2;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+}
+
+.strictModeWarningCard {
+    -fx-background-color: #fff4d6;
+    -fx-border-color: #e2b04b;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+}
+
+.strictModeWarningTitle {
+    -fx-font-weight: bold;
+    -fx-text-fill: #8a5a00;
+}
+
+.unlockChallengeTarget {
+    -fx-padding: 14;
+    -fx-background-color: #ecece7;
+    -fx-background-radius: 6;
+}
