@@ -1,6 +1,40 @@
 .dashboard {
-    -fx-background-color: #f7f7f4;
+    -fx-background-color: #f7f5ef;
     -fx-font-family: "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+}
+
+.dashboardSidebar {
+    -fx-background-color: #ffffff;
+    -fx-border-color: transparent #e5e0d6 transparent transparent;
+    -fx-pref-width: 208;
+}
+
+.dashboardBrandTitle {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1f2937;
+}
+
+.dashboardBrandSubtitle,
+.dashboardPrivacy {
+    -fx-font-size: 11px;
+    -fx-text-fill: #6b7280;
+}
+
+.dashboardNavigation .button {
+    -fx-alignment: CENTER_LEFT;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-font-weight: bold;
+}
+
+.dashboardNavigation .button:hover {
+    -fx-background-color: #edf4eb;
+}
+
+.dashboardNavigation .button.activeNavigation {
+    -fx-background-color: #2f6d45;
+    -fx-text-fill: #ffffff;
 }
 
 .dashboard .label,
@@ -19,6 +53,22 @@
 
 .dashboard .button:hover {
     -fx-background-color: #e5e7eb;
+}
+
+.dashboardNavigation .button.activeNavigation:hover {
+    -fx-background-color: #2f6d45;
+}
+
+.dashboard .focusSiteRule {
+    -fx-background-color: #ffffff;
+}
+
+.dashboard .pendingState {
+    -fx-text-fill: #9a6700;
+}
+
+.dashboard .errorState {
+    -fx-text-fill: #a23a25;
 }
 
 .dashboard .button:disabled,
@@ -45,4 +95,9 @@
 .dashboard .scroll-pane,
 .dashboard .scroll-pane > .viewport {
     -fx-background-color: transparent;
+}
+
+.dashboardContent {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
 }

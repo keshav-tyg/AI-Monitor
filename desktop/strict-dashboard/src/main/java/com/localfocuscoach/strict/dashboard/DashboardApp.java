@@ -1,14 +1,18 @@
 package com.localfocuscoach.strict.dashboard;
 
+import java.util.List;
 import java.util.Objects;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 public final class DashboardApp {
@@ -74,13 +78,34 @@ public final class DashboardApp {
         private void configureNavigation() {
             focusRulesNavigation.setId("focusRulesNavigation");
             focusRulesNavigation.setOnAction(event -> showFocusRules());
+            focusRulesNavigation.setMaxWidth(Double.MAX_VALUE);
             strictModeNavigation.setId("strictModeNavigation");
             strictModeNavigation.setOnAction(event -> showStrictMode());
-            var navigation = new HBox(10, focusRulesNavigation, strictModeNavigation);
+            strictModeNavigation.setMaxWidth(Double.MAX_VALUE);
+
+            var brandTitle = new Label("LOCAL FOCUS");
+            brandTitle.getStyleClass().add("dashboardBrandTitle");
+            var brandSubtitle = new Label("Coach dashboard");
+            brandSubtitle.getStyleClass().add("dashboardBrandSubtitle");
+            var brand = new VBox(4, brandTitle, brandSubtitle);
+            brand.setId("dashboardBrand");
+            brand.getStyleClass().add("dashboardBrand");
+
+            var spacer = new Region();
+            VBox.setVgrow(spacer, Priority.ALWAYS);
+            var privacy = new Label("Your focus data stays on this device.");
+            privacy.setId("dashboardPrivacy");
+            privacy.setWrapText(true);
+            privacy.getStyleClass().add("dashboardPrivacy");
+
+            var navigation = new VBox(8, focusRulesNavigation, strictModeNavigation);
             navigation.getStyleClass().add("dashboardNavigation");
-            navigation.setAlignment(Pos.CENTER_LEFT);
-            navigation.setPadding(new Insets(12, 20, 0, 20));
-            setTop(navigation);
+            var sidebar = new VBox(24, brand, navigation, spacer, privacy);
+            sidebar.setId("dashboardSidebar");
+            sidebar.getStyleClass().add("dashboardSidebar");
+            sidebar.setAlignment(Pos.TOP_LEFT);
+            sidebar.setPadding(new Insets(28, 20, 24, 20));
+            setLeft(sidebar);
         }
 
         private void showFocusRules() {
@@ -89,13 +114,8 @@ public final class DashboardApp {
             }
             disposeCurrentView();
             focusRulesView = new FocusRulesView(client, this::showStrictMode);
-            var scroll = new ScrollPane(focusRulesView);
-            scroll.setFitToWidth(true);
-            scroll.setPannable(true);
-            scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
-            setDashboardContent(scroll);
-            focusRulesNavigation.setDisable(true);
-            strictModeNavigation.setDisable(false);
+            setDashboardContent(focusRulesView);
+            setActiveNavigation(focusRulesNavigation);
         }
 
         private void showStrictMode() {
@@ -105,8 +125,7 @@ public final class DashboardApp {
             disposeCurrentView();
             strictModeView = new StrictModeView(client, this::showUnlockChallenge);
             setDashboardContent(strictModeView);
-            focusRulesNavigation.setDisable(false);
-            strictModeNavigation.setDisable(true);
+            setActiveNavigation(strictModeNavigation);
         }
 
         private void showUnlockChallenge() {
@@ -116,15 +135,25 @@ public final class DashboardApp {
             disposeCurrentView();
             unlockChallengeView = new UnlockChallengeView(client, this::showStrictMode);
             setDashboardContent(unlockChallengeView);
-            focusRulesNavigation.setDisable(false);
-            strictModeNavigation.setDisable(false);
+            setActiveNavigation(strictModeNavigation);
         }
 
         private void setDashboardContent(Parent content) {
-            setCenter(content);
+            var scroll = new ScrollPane(content);
+            scroll.setFitToWidth(true);
+            scroll.setPannable(true);
+            scroll.getStyleClass().add("dashboardContent");
+            setCenter(scroll);
             if (getScene() != null) {
                 applyCss();
             }
+        }
+
+        private void setActiveNavigation(Button active) {
+            for (var navigation : List.of(focusRulesNavigation, strictModeNavigation)) {
+                navigation.getStyleClass().remove("activeNavigation");
+            }
+            active.getStyleClass().add("activeNavigation");
         }
 
         private void disposeCurrentView() {
