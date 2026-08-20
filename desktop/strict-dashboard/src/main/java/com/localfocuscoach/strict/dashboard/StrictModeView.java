@@ -259,6 +259,7 @@ public final class StrictModeView extends BorderPane {
         content.setMaxWidth(520);
         content.setAlignment(Pos.CENTER_LEFT);
         setCenter(content);
+        BorderPane.setAlignment(content, Pos.TOP_LEFT);
         BorderPane.setMargin(content, new Insets(24, 28, 28, 28));
     }
 
@@ -406,6 +407,7 @@ public final class StrictModeView extends BorderPane {
         content.setMaxWidth(520);
         content.setAlignment(Pos.CENTER_LEFT);
         setCenter(content);
+        BorderPane.setAlignment(content, Pos.TOP_LEFT);
         BorderPane.setMargin(content, new Insets(24, 28, 28, 28));
     }
 

@@ -133,6 +133,7 @@ class StrictModeViewTest {
             assertNotNull(view.lookup("#durationStepper"));
             assertNotNull(view.lookup("#unlockPreparationCard"));
             assertNotNull(view.lookup("#strictSafetyCard"));
+            assertEquals(28.0, view.getCenter().getLayoutX(), 0.1);
             assertTrue(view.lookup("#timedSessionOption")
                     .getStyleClass()
                     .contains("selectedSessionOption"));
@@ -264,6 +265,7 @@ class StrictModeViewTest {
         FxTestSupport.call(() -> {
             assertEquals("Restore the Chrome extension", text(view, "#activeTitle"));
             assertNotNull(view.lookup("#activeSessionCard"));
+            assertEquals(28.0, view.getCenter().getLayoutX(), 0.1);
             assertEquals("25 seconds remaining", text(view, "#warningCountdown"));
             var warningCountdown = (Label) view.lookup("#warningCountdown");
             assertTrue(warningCountdown.getStyleClass().contains("pendingState"));
@@ -349,8 +351,9 @@ class StrictModeViewTest {
             root.getStylesheets().add(java.util.Objects.requireNonNull(
                             DashboardApp.class.getResource("dashboard.css"))
                     .toExternalForm());
-            new Scene(root, 760, 580);
+            new Scene(root, 892, 720);
             root.applyCss();
+            root.layout();
             return null;
         });
     }
