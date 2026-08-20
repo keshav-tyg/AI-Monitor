@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -232,22 +233,71 @@ class FocusRulesViewTest {
                 budget.setText("6");
                 return null;
             });
+            waitForFxDelay(Duration.millis(30));
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "8");
+                return null;
+            });
             releaseSave.countDown();
             FxTestSupport.waitFor(
-                    () -> saves.size() == 2 && "Saved".equals(text(view, "#focusSaveStatus")),
+                    () -> saves.size() >= 2 && "Saved".equals(text(view, "#focusSaveStatus")),
                     "queued latest Focus Rules save");
+            waitForFxDelay(Duration.millis(30));
 
             FxTestSupport.call(() -> {
                 assertEquals(
-                        "6", ((TextField) view.lookup("#instagramReelsBudget")).getText());
+                        "8", ((TextField) view.lookup("#instagramReelsBudget")).getText());
                 assertFalse(((TextField) view.lookup("#instagramReelsBudget")).isDisabled());
                 assertEquals("Synced with Chrome", textOnFxThread(view, "#chromeSyncStatus"));
                 return null;
             });
+            assertEquals(2, saves.size());
             assertEquals(4, instagramRule(saves.get(0)).get("doomscrollBudgetMinutes"));
-            assertEquals(6, instagramRule(saves.get(1)).get("doomscrollBudgetMinutes"));
+            assertEquals(8, instagramRule(saves.get(1)).get("doomscrollBudgetMinutes"));
         } finally {
             releaseSave.countDown();
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void fullRefreshDoesNotOverwriteADraftChangedAfterTheRequestStarts() throws Exception {
+        var refreshStarted = new CountDownLatch(1);
+        var releaseRefresh = new CountDownLatch(1);
+        var requestNumber = new AtomicInteger();
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                @SuppressWarnings("unchecked")
+                var settings = (Map<String, Object>) request.payload().get("settings");
+                return focusSettingsResponse(4L, 4L, settings);
+            }
+            if (requestNumber.incrementAndGet() == 2) {
+                refreshStarted.countDown();
+                await(releaseRefresh);
+            }
+            return focusSettingsResponse(3L, 3L, settingsPayload(5));
+        });
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                view.refresh();
+                return null;
+            });
+            assertTrue(refreshStarted.await(1, TimeUnit.SECONDS));
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "6");
+                return null;
+            });
+            releaseRefresh.countDown();
+            waitForFxDelay(Duration.millis(30));
+
+            assertEquals(
+                    "6",
+                    FxTestSupport.call(() -> ((TextField) view.lookup("#instagramReelsBudget"))
+                            .getText()));
+        } finally {
+            releaseRefresh.countDown();
             dispose(view, client);
         }
     }
@@ -340,6 +390,9 @@ class FocusRulesViewTest {
                     () -> "Strict Mode is active, so settings cannot be made less protective."
                             .equals(text(view, "#focusSettingsFeedback")),
                     "Strict Mode save restriction");
+            assertEquals(
+                    "Strict Mode is active, so settings cannot be made less protective.",
+                    text(view, "#focusSaveStatus"));
 
             assertEquals(
                     "6",
@@ -445,6 +498,7 @@ class FocusRulesViewTest {
             FxTestSupport.waitFor(
                     () -> "Could not save Focus Rules".equals(text(view, "#focusSettingsFeedback")),
                     "Focus Rules save failure");
+            assertEquals("Could not save Focus Rules", text(view, "#focusSaveStatus"));
 
             assertEquals(
                     "4",
@@ -603,6 +657,17 @@ class FocusRulesViewTest {
     private static FocusRulesView autoSavingView(ServiceClient client) {
         return FxTestSupport.call(
                 () -> new FocusRulesView(client, () -> {}, Duration.seconds(1), Duration.millis(10)));
+    }
+
+    private static void waitForFxDelay(Duration duration) throws Exception {
+        var elapsed = new CountDownLatch(1);
+        FxTestSupport.call(() -> {
+            var delay = new PauseTransition(duration);
+            delay.setOnFinished(event -> elapsed.countDown());
+            delay.playFromStart();
+            return null;
+        });
+        assertTrue(elapsed.await(1, TimeUnit.SECONDS));
     }
 
     private static ProtocolMessage focusSettingsResponse(long revision, long appliedRevision) {
