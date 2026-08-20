@@ -1,7 +1,6 @@
 import type { PurposefulDetail } from '../../shared/types';
 import {
   createBaseAdapter,
-  createMediaAdvanceProbe,
   type Emit,
   type PageAdapter,
 } from './base';
@@ -26,7 +25,7 @@ function classifyClick(target: Element): PurposefulDetail | undefined {
 
 export function createYouTubeAdapter(emit: Emit): PageAdapter {
   return createBaseAdapter(
-    { site: 'youtube-shorts', advanced: createMediaAdvanceProbe(), classifyClick },
+    { site: 'youtube-shorts', advanced: () => false, classifyClick },
     emit,
   );
 }

@@ -113,6 +113,27 @@ it('leaves a deep-link item alone, then prompts on its first advance', async () 
   });
 });
 
+it('prompts when a YouTube Short deep-link advances', async () => {
+  await cacheDesktopSettingsForTest({
+    enabled: true,
+    rules: {
+      ...DEFAULT_SETTINGS.rules,
+      'youtube-shorts': { ...DEFAULT_SETTINGS.rules['youtube-shorts'], enabled: true },
+    },
+  });
+
+  await routeForTest({ type: 'arrive', site: 'youtube-shorts', entryKind: 'deep-link' }, 72);
+  await routeForTest({ type: 'event', event: {
+    site: 'youtube-shorts', kind: 'content-advance', at: 2_000,
+  } }, 72);
+
+  expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(72, {
+    type: 'prompt-intent',
+    site: 'youtube-shorts',
+    budgetMinutes: 5,
+  });
+});
+
 it('walls a spent doomscroll budget once and records one intervention', async () => {
   await arrive();
   await declare('doomscroll');
