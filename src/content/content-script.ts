@@ -5,14 +5,18 @@ import { classifyEntry } from './entry-provenance';
 import { dismissIntentSurfaces, showFeedWall, showIntentPrompt } from './intent-prompt';
 import { dismissOverlays, showNotice, showPauseOverlay } from './overlay';
 import { createRouteWatcher } from './route-watcher';
+import { nextYouTubeShort, youtubeShortId } from './youtube-shorts-route';
 
 let adapter: PageAdapter | undefined;
 let activeSite: SiteId | undefined;
 let engagement: EngagementTracker | undefined;
+let activeYouTubeShortId: string | undefined;
 
-function currentSite(): SiteId | undefined {
+function currentSite(href: string): SiteId | undefined {
   try {
-    return detectSite(new URL(window.location.href));
+    const site = detectSite(new URL(href));
+    if (site === 'youtube-shorts' && youtubeShortId(href) === undefined) return undefined;
+    return site;
   } catch {
     // An unparseable location is not a supported view.
     return undefined;
@@ -36,13 +40,25 @@ function stopAdapter(): void {
   adapter = undefined;
   activeSite = undefined;
   engagement = undefined;
+  activeYouTubeShortId = undefined;
   dismissOverlays();
   dismissIntentSurfaces();
 }
 
-function syncToRoute(): void {
-  const site = currentSite();
-  if (site === activeSite) return;
+function syncToRoute(href: string): void {
+  const site = currentSite(href);
+  if (site === activeSite) {
+    if (site !== 'youtube-shorts') return;
+
+    const nextShort = nextYouTubeShort(activeYouTubeShortId, href);
+    if (!nextShort) return;
+    activeYouTubeShortId = nextShort.id;
+    if (!nextShort.advanced || !engagement) return;
+
+    send({ type: 'engagement', site, record: engagement.finishItem() });
+    sendEvent({ site, kind: 'content-advance', at: Date.now() });
+    return;
+  }
 
   stopAdapter();
   if (!site) return;
@@ -51,7 +67,7 @@ function syncToRoute(): void {
   // advance the URL no longer describes how this session started.
   const entryKind = classifyEntry({
     site,
-    href: window.location.href,
+    href,
     referrer: document.referrer,
   });
 
@@ -79,6 +95,7 @@ function syncToRoute(): void {
   engagement = tracker;
   send({ type: 'arrive', site, entryKind });
   started.start();
+  activeYouTubeShortId = site === 'youtube-shorts' ? youtubeShortId(href) : undefined;
 }
 
 /** Only a well-formed command naming the site this tab is on is rendered. */
@@ -134,12 +151,12 @@ const routeWatcher = createRouteWatcher({
   onChange: syncToRoute,
 });
 
-window.addEventListener('popstate', syncToRoute);
-window.addEventListener('hashchange', syncToRoute);
+window.addEventListener('popstate', () => syncToRoute(window.location.href));
+window.addEventListener('hashchange', () => syncToRoute(window.location.href));
 window.addEventListener('pagehide', () => {
   routeWatcher.stop();
   stopAdapter();
 });
 
 routeWatcher.start();
-syncToRoute();
+syncToRoute(window.location.href);
