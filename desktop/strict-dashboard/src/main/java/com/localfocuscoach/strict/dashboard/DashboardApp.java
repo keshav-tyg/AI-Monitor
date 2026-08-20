@@ -114,9 +114,22 @@ public final class DashboardApp {
         }
 
         private void configureTitleBar() {
-            var red = trafficLight("macosClose", "macosTrafficRed");
-            var yellow = trafficLight("macosMinimize", "macosTrafficYellow");
-            var green = trafficLight("macosZoom", "macosTrafficGreen");
+            var red = trafficLight("macosClose", "macosTrafficRed", "Close window", () -> {
+                if (stage != null) {
+                    stage.close();
+                }
+            });
+            var yellow = trafficLight(
+                    "macosMinimize", "macosTrafficYellow", "Minimize window", () -> {
+                        if (stage != null) {
+                            stage.setIconified(true);
+                        }
+                    });
+            var green = trafficLight("macosZoom", "macosTrafficGreen", "Zoom window", () -> {
+                if (stage != null) {
+                    stage.setMaximized(!stage.isMaximized());
+                }
+            });
             var trafficLights = new HBox(8, red, yellow, green);
             trafficLights.setId("macosTrafficLights");
             trafficLights.setAlignment(Pos.CENTER_LEFT);
@@ -145,13 +158,25 @@ public final class DashboardApp {
             setTop(titleBar);
         }
 
-        private static Region trafficLight(String id, String styleClass) {
+        private static Region trafficLight(
+                String id, String styleClass, String accessibleText, Runnable action) {
             var light = new Region();
             light.setId(id);
             light.getStyleClass().addAll("macosTrafficLight", styleClass);
+            light.setAccessibleText(accessibleText);
+            light.setFocusTraversable(false);
+            light.setCursor(Cursor.HAND);
             light.setMinSize(12, 12);
             light.setPrefSize(12, 12);
             light.setMaxSize(12, 12);
+            light.setOnMousePressed(MouseEvent::consume);
+            light.setOnMouseDragged(MouseEvent::consume);
+            light.setOnMouseClicked(event -> {
+                if (event.getButton() == MouseButton.PRIMARY) {
+                    action.run();
+                    event.consume();
+                }
+            });
             return light;
         }
 

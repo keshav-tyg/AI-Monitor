@@ -105,15 +105,49 @@ class StrictModeViewTest {
         var view = idleView(starts);
 
         FxTestSupport.call(() -> {
-            var duration = (TextField) view.lookup("#durationMinutes");
+            var hours = (TextField) view.lookup("#durationHours");
+            var minutes = (TextField) view.lookup("#durationMinutePart");
             var start = (Button) view.lookup("#startSession");
-            duration.setText("0");
+            hours.setText("0");
+            minutes.setText("0");
             start.fire();
             assertEquals("Enter a positive duration in minutes", feedback(view));
-            duration.setText("-5");
+            hours.setText("-5");
             start.fire();
-            duration.setText("1.5");
+            hours.setText("1.5");
             start.fire();
+            return null;
+        });
+
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
+    void durationPartsCannotUseNegativeHoursToOffsetInvalidMinutes() {
+        var starts = new ArrayList<ProtocolMessage>();
+        var view = idleView(starts);
+
+        FxTestSupport.call(() -> {
+            ((TextField) view.lookup("#durationHours")).setText("-1");
+            ((TextField) view.lookup("#durationMinutePart")).setText("61");
+            ((Button) view.lookup("#startSession")).fire();
+            assertEquals("Hours must be 0 or more", feedback(view));
+            return null;
+        });
+
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
+    void durationMinutePartMustStayWithinAClockMinute() {
+        var starts = new ArrayList<ProtocolMessage>();
+        var view = idleView(starts);
+
+        FxTestSupport.call(() -> {
+            ((TextField) view.lookup("#durationHours")).setText("1");
+            ((TextField) view.lookup("#durationMinutePart")).setText("60");
+            ((Button) view.lookup("#startSession")).fire();
+            assertEquals("Minutes must be between 0 and 59", feedback(view));
             return null;
         });
 
@@ -171,7 +205,8 @@ class StrictModeViewTest {
         var view = idleView(starts);
 
         FxTestSupport.call(() -> {
-            ((TextField) view.lookup("#durationMinutes")).setText("525601");
+            ((TextField) view.lookup("#durationHours")).setText("8760");
+            ((TextField) view.lookup("#durationMinutePart")).setText("1");
             ((Button) view.lookup("#startSession")).fire();
             assertEquals("Duration must be 525,600 minutes or less", feedback(view));
             return null;
@@ -186,7 +221,8 @@ class StrictModeViewTest {
         var view = idleView(starts);
 
         FxTestSupport.call(() -> {
-            ((TextField) view.lookup("#durationMinutes")).setText("15");
+            ((TextField) view.lookup("#durationHours")).setText("0");
+            ((TextField) view.lookup("#durationMinutePart")).setText("15");
             ((CheckBox) view.lookup("#earlyExitChallenge")).setSelected(true);
             ((Button) view.lookup("#startSession")).fire();
             return null;
@@ -207,7 +243,8 @@ class StrictModeViewTest {
         var view = idleView(new ArrayList<>());
 
         FxTestSupport.call(() -> {
-            ((TextField) view.lookup("#durationMinutes")).setText("25");
+            ((TextField) view.lookup("#durationHours")).setText("0");
+            ((TextField) view.lookup("#durationMinutePart")).setText("25");
             ((CheckBox) view.lookup("#earlyExitChallenge")).setSelected(true);
             view.refresh();
             assertEquals("25", ((TextField) view.lookup("#durationMinutes")).getText());
