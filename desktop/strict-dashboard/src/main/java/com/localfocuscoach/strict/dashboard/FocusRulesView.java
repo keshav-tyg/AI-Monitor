@@ -98,6 +98,7 @@ public final class FocusRulesView extends BorderPane {
         }
         refreshInFlight = true;
         var generation = ++responseGeneration;
+        var requestedDraftGeneration = draftGeneration;
         client.getFocusSettingsAsync((response, failure) -> {
             if (disposed) {
                 return;
@@ -118,8 +119,10 @@ public final class FocusRulesView extends BorderPane {
                 var snapshot = parseSnapshot(response.payload());
                 if (statusOnly) {
                     renderChromeSyncStatus(snapshot);
-                } else {
+                } else if (draftGeneration == requestedDraftGeneration) {
                     renderSnapshot(snapshot);
+                } else {
+                    renderChromeSyncStatus(snapshot);
                 }
             } catch (IllegalArgumentException exception) {
                 if (statusOnly) {
@@ -358,13 +361,17 @@ public final class FocusRulesView extends BorderPane {
             saveInFlight = false;
             if (failure != null || response == null) {
                 feedback.setText("Could not save Focus Rules");
+                saveStatus.setText("Could not save Focus Rules");
                 scheduleChromeSyncPoll();
             } else if ("error.focusSettingsWeakening".equals(response.type())) {
                 feedback.setText(
                         "Strict Mode is active, so settings cannot be made less protective.");
+                saveStatus.setText(
+                        "Strict Mode is active, so settings cannot be made less protective.");
                 scheduleChromeSyncPoll();
             } else if (!"service.focusSettings".equals(response.type())) {
                 feedback.setText("Could not save Focus Rules");
+                saveStatus.setText("Could not save Focus Rules");
                 scheduleChromeSyncPoll();
             } else {
                 try {
@@ -377,11 +384,13 @@ public final class FocusRulesView extends BorderPane {
                     saveStatus.setText("Saved");
                 } catch (IllegalArgumentException exception) {
                     feedback.setText("Could not save Focus Rules");
+                    saveStatus.setText("Could not save Focus Rules");
                     scheduleChromeSyncPoll();
                 }
             }
             if (saveQueuedAfterInFlight) {
                 saveQueuedAfterInFlight = false;
+                autoSaveDebounce.stop();
                 saveChangedDraft();
             }
         });
