@@ -8,6 +8,7 @@ import com.localfocuscoach.strict.focus.FocusSite;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -21,7 +22,8 @@ import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -30,6 +32,9 @@ import javafx.util.Duration;
 public final class FocusRulesView extends BorderPane {
     private static final Duration CHROME_SYNC_POLL_INTERVAL = Duration.seconds(1);
     private static final Duration AUTO_SAVE_DELAY = Duration.millis(700);
+    private static final double TWO_COLUMN_GRID_MIN_WIDTH = 720;
+    private static final List<String> STATUS_STYLE_CLASSES =
+            List.of("successState", "pendingState", "errorState");
 
     private final ServiceClient client;
     private final Runnable showStrictMode;
@@ -46,6 +51,7 @@ public final class FocusRulesView extends BorderPane {
     private boolean saveInFlight;
     private boolean renderingSnapshot;
     private boolean saveQueuedAfterInFlight;
+    private int ruleCardColumns;
     private long draftGeneration;
     private long responseGeneration;
 
@@ -154,22 +160,37 @@ public final class FocusRulesView extends BorderPane {
                 showStrictMode.run();
             }
         });
-        var strictModeContainer = new HBox(strictMode);
+        var strictModeDescription = new Label(
+                "Strict Mode prevents settings from being weakened while a locked session is active.");
+        strictModeDescription.setId("focusRulesStrictModeDescription");
+        strictModeDescription.setWrapText(true);
+        strictModeDescription.getStyleClass().add("focusRulesStrictModeDescription");
+        var strictModeContainer = new HBox(12, strictModeDescription, strictMode);
         strictModeContainer.setId("focusRulesStrictMode");
-        var heading = new VBox(8, new HBox(12, title, strictModeContainer), description);
+        strictModeContainer.getStyleClass().add("focusRulesStrictMode");
+        strictModeContainer.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(strictModeDescription, Priority.ALWAYS);
+        var headingRow = new HBox(18, title, strictModeContainer);
+        headingRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(strictModeContainer, Priority.ALWAYS);
+        var heading = new VBox(8, headingRow, description);
         heading.setId("focusRulesHeader");
         heading.setPadding(new Insets(28, 32, 14, 32));
         setTop(heading);
 
         protectionEnabled.setId("focusProtectionEnabled");
-        var cards = new FlowPane(16, 16);
+        protectionEnabled.getStyleClass().add("protectionControl");
+        var cards = new GridPane();
         cards.setId("focusRulesCards");
-        cards.setPrefWrapLength(860);
+        cards.setHgap(16);
+        cards.setVgap(16);
         for (var site : FocusSite.values()) {
             var controls = createRuleControls(site);
             rules.put(site, controls);
-            cards.getChildren().add(controls.card());
         }
+        updateRuleCardLayout(cards, 1);
+        cards.widthProperty().addListener(
+                (observable, previous, current) -> updateRuleCardLayout(cards, current.doubleValue()));
         var content = new VBox(16, protectionEnabled, cards);
         content.setPadding(new Insets(12, 32, 12, 32));
         setCenter(content);
@@ -177,7 +198,7 @@ public final class FocusRulesView extends BorderPane {
         chromeSyncStatus.setId("chromeSyncStatus");
         feedback.setId("focusSettingsFeedback");
         feedback.setWrapText(true);
-        feedback.setStyle("-fx-text-fill: #8a331f;");
+        feedback.getStyleClass().add("errorState");
         saveStatus.setId("focusSaveStatus");
         var footer = new VBox(8, saveStatus, chromeSyncStatus, feedback);
         footer.setPadding(new Insets(14, 32, 28, 32));
@@ -189,6 +210,7 @@ public final class FocusRulesView extends BorderPane {
         var metadata = SiteMetadata.forSite(site);
         var enabled = new CheckBox("Enable this rule");
         enabled.setId(metadata.prefix() + "Enabled");
+        enabled.getStyleClass().add("protectionControl");
         var budget = numberField(metadata.prefix() + "Budget", "1–60");
         var gracePeriod = numberField(metadata.prefix() + "GracePeriod", "0–600");
         var sensitivityGroup = new ToggleGroup();
@@ -199,6 +221,7 @@ public final class FocusRulesView extends BorderPane {
             button.setId(metadata.prefix() + "Sensitivity" + sensitivitySuffix(sensitivity));
             button.setToggleGroup(sensitivityGroup);
             button.setUserData(sensitivity);
+            button.getStyleClass().add("focusSelectionControl");
             sensitivityButtons.put(sensitivity, button);
             sensitivityList.getChildren().add(button);
         }
@@ -217,9 +240,13 @@ public final class FocusRulesView extends BorderPane {
         blockDuration.setId(metadata.prefix() + "BlockDuration");
         var title = new Label(metadata.label());
         title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        var route = new Label(metadata.routeLabel());
+        route.setId(metadata.prefix() + "Route");
+        route.getStyleClass().add("focusRulesRoute");
+        var cardHeader = new VBox(3, title, route);
         var card = new VBox(
                 10,
-                title,
+                cardHeader,
                 enabled,
                 labelled("Doomscroll session budget (minutes)", budget),
                 sensitivityList,
@@ -230,10 +257,33 @@ public final class FocusRulesView extends BorderPane {
         card.getStyleClass().add("focusRulesCard");
         card.setId(metadata.prefix() + "Rule");
         card.setPadding(new Insets(18));
-        card.setStyle(
-                "-fx-background-color: white; -fx-border-color: #d8d8d2; -fx-border-radius: 10; -fx-background-radius: 10;");
+        card.setMaxWidth(Double.MAX_VALUE);
         return new RuleControls(
                 card, enabled, budget, gracePeriod, interventions, sensitivityGroup, sensitivityButtons);
+    }
+
+    private void updateRuleCardLayout(GridPane cards, double width) {
+        var columns = width >= TWO_COLUMN_GRID_MIN_WIDTH ? 2 : 1;
+        if (columns == ruleCardColumns) {
+            return;
+        }
+        ruleCardColumns = columns;
+        cards.getChildren().clear();
+        cards.getColumnConstraints().clear();
+        for (var column = 0; column < columns; column++) {
+            var constraint = new ColumnConstraints();
+            constraint.setPercentWidth(100.0 / columns);
+            constraint.setHgrow(Priority.ALWAYS);
+            constraint.setFillWidth(true);
+            cards.getColumnConstraints().add(constraint);
+        }
+        var index = 0;
+        for (var site : FocusSite.values()) {
+            var card = rules.get(site).card();
+            cards.add(card, index % columns, index / columns);
+            GridPane.setHgrow(card, Priority.ALWAYS);
+            index++;
+        }
     }
 
     private void renderSnapshot(Map<String, Object> payload) {
@@ -282,7 +332,10 @@ public final class FocusRulesView extends BorderPane {
         var synced = snapshot.settings().revision() > 0
                 && snapshot.chromeRevision() == snapshot.settings().revision();
         chromeSyncPending = !synced;
-        chromeSyncStatus.setText(synced ? "Synced with Chrome" : "Waiting for Chrome");
+        setStatus(
+                chromeSyncStatus,
+                synced ? "Synced with Chrome" : "Waiting for Chrome",
+                synced ? "successState" : "pendingState");
         if (synced) {
             chromeSyncPoll.stop();
         } else {
@@ -301,6 +354,7 @@ public final class FocusRulesView extends BorderPane {
             return;
         }
         draftGeneration++;
+        setStatus(saveStatus, "", null);
         autoSaveDebounce.playFromStart();
     }
 
@@ -317,12 +371,12 @@ public final class FocusRulesView extends BorderPane {
             var controls = rules.get(site);
             var budget = integer(controls.budget(), 1, 60);
             if (budget == null) {
-                feedback.setText("Doomscroll session budget must be 1 to 60 minutes");
+                showValidationError("Doomscroll session budget must be 1 to 60 minutes");
                 return;
             }
             var gracePeriod = integer(controls.gracePeriod(), 0, 600);
             if (gracePeriod == null) {
-                feedback.setText("Grace period must be 0 to 600 seconds");
+                showValidationError("Grace period must be 0 to 600 seconds");
                 return;
             }
             var interventions = new ArrayList<FocusIntervention>();
@@ -332,7 +386,7 @@ public final class FocusRulesView extends BorderPane {
                 }
             }
             if (controls.enabled().isSelected() && interventions.isEmpty()) {
-                feedback.setText("An enabled rule needs at least one intervention");
+                showValidationError("An enabled rule needs at least one intervention");
                 return;
             }
             proposedRules.put(
@@ -351,7 +405,7 @@ public final class FocusRulesView extends BorderPane {
         var submittedDraftGeneration = draftGeneration;
         saveInFlight = true;
         chromeSyncPoll.stop();
-        saveStatus.setText("Saving changes…");
+        setStatus(saveStatus, "Saving changes…", "pendingState");
         feedback.setText("");
         var generation = ++responseGeneration;
         client.saveFocusSettingsAsync(payload, (response, failure) -> {
@@ -361,17 +415,19 @@ public final class FocusRulesView extends BorderPane {
             saveInFlight = false;
             if (failure != null || response == null) {
                 feedback.setText("Could not save Focus Rules");
-                saveStatus.setText("Could not save Focus Rules");
+                setStatus(saveStatus, "Could not save Focus Rules", "errorState");
                 scheduleChromeSyncPoll();
             } else if ("error.focusSettingsWeakening".equals(response.type())) {
                 feedback.setText(
                         "Strict Mode is active, so settings cannot be made less protective.");
-                saveStatus.setText(
-                        "Strict Mode is active, so settings cannot be made less protective.");
+                setStatus(
+                        saveStatus,
+                        "Strict Mode is active, so settings cannot be made less protective.",
+                        "errorState");
                 scheduleChromeSyncPoll();
             } else if (!"service.focusSettings".equals(response.type())) {
                 feedback.setText("Could not save Focus Rules");
-                saveStatus.setText("Could not save Focus Rules");
+                setStatus(saveStatus, "Could not save Focus Rules", "errorState");
                 scheduleChromeSyncPoll();
             } else {
                 try {
@@ -381,10 +437,10 @@ public final class FocusRulesView extends BorderPane {
                     } else {
                         renderChromeSyncStatus(snapshot);
                     }
-                    saveStatus.setText("Saved");
+                    setStatus(saveStatus, "Saved", "successState");
                 } catch (IllegalArgumentException exception) {
                     feedback.setText("Could not save Focus Rules");
-                    saveStatus.setText("Could not save Focus Rules");
+                    setStatus(saveStatus, "Could not save Focus Rules", "errorState");
                     scheduleChromeSyncPoll();
                 }
             }
@@ -394,6 +450,19 @@ public final class FocusRulesView extends BorderPane {
                 saveChangedDraft();
             }
         });
+    }
+
+    private void showValidationError(String message) {
+        setStatus(saveStatus, "", null);
+        feedback.setText(message);
+    }
+
+    private static void setStatus(Label label, String text, String styleClass) {
+        label.setText(text);
+        label.getStyleClass().removeAll(STATUS_STYLE_CLASSES);
+        if (styleClass != null) {
+            label.getStyleClass().add(styleClass);
+        }
     }
 
     private void trackDraftChanges() {
@@ -436,7 +505,8 @@ public final class FocusRulesView extends BorderPane {
 
     private static HBox labelled(String text, TextField field) {
         var label = new Label(text);
-        label.setMinWidth(250);
+        label.setMinWidth(0);
+        label.setWrapText(true);
         var row = new HBox(12, label, field);
         row.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(label, Priority.ALWAYS);
@@ -578,12 +648,14 @@ public final class FocusRulesView extends BorderPane {
 
     private record FocusSettingsSnapshot(FocusSettings settings, long chromeRevision) {}
 
-    private record SiteMetadata(String label, String prefix) {
+    private record SiteMetadata(String label, String routeLabel, String prefix) {
         private static SiteMetadata forSite(FocusSite site) {
             return switch (site) {
-                case INSTAGRAM_REELS -> new SiteMetadata("Instagram Reels", "instagramReels");
-                case X_TIMELINE -> new SiteMetadata("X timeline", "xTimeline");
-                case YOUTUBE_SHORTS -> new SiteMetadata("YouTube Shorts", "youtubeShorts");
+                case INSTAGRAM_REELS ->
+                    new SiteMetadata("Instagram Reels", "instagram.com/reels", "instagramReels");
+                case X_TIMELINE -> new SiteMetadata("X timeline", "x.com/home", "xTimeline");
+                case YOUTUBE_SHORTS ->
+                    new SiteMetadata("YouTube Shorts", "youtube.com/shorts", "youtubeShorts");
             };
         }
     }

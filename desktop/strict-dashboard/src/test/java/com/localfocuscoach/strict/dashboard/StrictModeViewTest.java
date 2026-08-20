@@ -22,6 +22,10 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
+import javafx.scene.effect.DropShadow;
+import javafx.scene.layout.StackPane;
+import javafx.scene.paint.Color;
+import javafx.scene.Scene;
 import org.junit.jupiter.api.Test;
 
 class StrictModeViewTest {
@@ -119,10 +123,12 @@ class StrictModeViewTest {
     @Test
     void idleModeRendersTheStrictModeHeaderAndCard() {
         var view = idleView(new ArrayList<>());
+        applyDashboardCss(view);
 
         FxTestSupport.call(() -> {
             assertNotNull(view.lookup("#strictModeHeader"));
             assertEquals(1, view.lookupAll(".strictModeCard").size());
+            assertNotNull(((DropShadow) view.lookup(".strictModeCard").getEffect()));
             return null;
         });
     }
@@ -214,10 +220,14 @@ class StrictModeViewTest {
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 () -> {}));
         FxTestSupport.waitFor(() -> view.lookup("#activeTitle") != null, "warning dashboard");
+        applyDashboardCss(view);
 
         FxTestSupport.call(() -> {
             assertEquals("Restore the Chrome extension", text(view, "#activeTitle"));
             assertEquals("25 seconds remaining", text(view, "#warningCountdown"));
+            var warningCountdown = (Label) view.lookup("#warningCountdown");
+            assertTrue(warningCountdown.getStyleClass().contains("pendingState"));
+            assertEquals(Color.web("#9a6700"), warningCountdown.getTextFill());
             assertTrue(((Button) view.lookup("#unlockSession")).isVisible());
             assertEquals(1, view.lookupAll(".strictModeWarningCard").size());
             return null;
@@ -289,6 +299,19 @@ class StrictModeViewTest {
 
     private static ProtocolMessage inactiveStatus() {
         return new ProtocolMessage(1, SECRET, "service.status", Map.of("active", false));
+    }
+
+    private static void applyDashboardCss(StrictModeView view) {
+        FxTestSupport.call(() -> {
+            var root = new StackPane(view);
+            root.getStyleClass().add("dashboard");
+            root.getStylesheets().add(java.util.Objects.requireNonNull(
+                            DashboardApp.class.getResource("dashboard.css"))
+                    .toExternalForm());
+            new Scene(root, 760, 580);
+            root.applyCss();
+            return null;
+        });
     }
 
     private static String feedback(StrictModeView view) {
