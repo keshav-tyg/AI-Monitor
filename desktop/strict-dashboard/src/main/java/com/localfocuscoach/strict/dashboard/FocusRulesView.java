@@ -38,6 +38,7 @@ import javafx.util.Duration;
 public final class FocusRulesView extends BorderPane {
     private static final Duration CHROME_SYNC_POLL_INTERVAL = Duration.seconds(1);
     private static final Duration AUTO_SAVE_DELAY = Duration.millis(700);
+    private static final Duration SAVED_STATUS_DURATION = Duration.seconds(1.5);
     private static final double TWO_COLUMN_GRID_MIN_WIDTH = 720;
     private static final List<FocusSite> DISPLAY_ORDER = List.of(
             FocusSite.INSTAGRAM_REELS,
@@ -50,7 +51,13 @@ public final class FocusRulesView extends BorderPane {
     private final Runnable showStrictMode;
     private final PauseTransition chromeSyncPoll;
     private final PauseTransition autoSaveDebounce;
+    private final PauseTransition savedStatusClear;
     private final CheckBox protectionEnabled = new CheckBox();
+    private final StackPane protectionIconTile = new StackPane();
+    private final StackPane protectionEnabledVisual = DashboardControls.shieldIcon(
+            "focusProtectionEnabledVisual", true, Color.web("#16a34a"));
+    private final StackPane protectionDisabledVisual = DashboardControls.shieldIcon(
+            "focusProtectionDisabledVisual", false, Color.web("#9ca3af"));
     private final Label protectionTitle = new Label();
     private final Label protectionDescription = new Label();
     private final HBox protectionActiveBadge = new HBox();
@@ -96,6 +103,7 @@ public final class FocusRulesView extends BorderPane {
         chromeSyncPoll.setOnFinished(event -> pollChromeSyncStatus());
         autoSaveDebounce = new PauseTransition(autoSaveDelay);
         autoSaveDebounce.setOnFinished(event -> saveChangedDraft());
+        savedStatusClear = new PauseTransition(SAVED_STATUS_DURATION);
         render();
         refresh();
     }
@@ -158,6 +166,7 @@ public final class FocusRulesView extends BorderPane {
         responseGeneration++;
         chromeSyncPoll.stop();
         autoSaveDebounce.stop();
+        savedStatusClear.stop();
     }
 
     private void render() {
@@ -220,9 +229,9 @@ public final class FocusRulesView extends BorderPane {
         protectionEnabled.getStyleClass().add("protectionControl");
         var protectionSwitch = DashboardControls.switchBox(protectionEnabled);
         protectionSwitch.getStyleClass().add("figmaLargeSwitch");
-        var protectionIcon = DashboardControls.shieldIcon(
-                "focusProtection", true, Color.web("#16a34a"));
-        var protectionIconTile = new StackPane(protectionIcon);
+        protectionIconTile.setId("focusProtectionIconTile");
+        protectionIconTile.getChildren().setAll(
+                protectionEnabledVisual, protectionDisabledVisual);
         protectionIconTile.getStyleClass().add("focusProtectionIconTile");
         protectionIconTile.setMinSize(40, 40);
         protectionIconTile.setPrefSize(40, 40);
@@ -440,6 +449,14 @@ public final class FocusRulesView extends BorderPane {
                 : "Rules are paused. Re-enable to resume protection across all sites.");
         protectionActiveBadge.setManaged(enabled);
         protectionActiveBadge.setVisible(enabled);
+        protectionEnabledVisual.setManaged(enabled);
+        protectionEnabledVisual.setVisible(enabled);
+        protectionDisabledVisual.setManaged(!enabled);
+        protectionDisabledVisual.setVisible(!enabled);
+        protectionIconTile.getStyleClass().removeAll("protectionActive", "protectionDisabled");
+        protectionIconTile
+                .getStyleClass()
+                .add(enabled ? "protectionActive" : "protectionDisabled");
     }
 
     private static StackPane siteBadge(SiteMetadata metadata) {
@@ -541,6 +558,7 @@ public final class FocusRulesView extends BorderPane {
             return;
         }
         draftGeneration++;
+        savedStatusClear.stop();
         setStatus(saveStatus, "", null);
         chromeSyncPoll.stop();
         chromeSyncPending = true;
@@ -625,6 +643,7 @@ public final class FocusRulesView extends BorderPane {
                     if (draftGeneration == submittedDraftGeneration) {
                         renderSnapshot(snapshot);
                         setStatus(saveStatus, "Saved", "successState");
+                        scheduleSavedStatusClear(submittedDraftGeneration);
                     } else {
                         chromeSyncPending = true;
                         setStatus(chromeSyncStatus, "Waiting for Chrome", "pendingState");
@@ -646,6 +665,18 @@ public final class FocusRulesView extends BorderPane {
     private void showValidationError(String message) {
         setStatus(saveStatus, "", null);
         feedback.setText(message);
+    }
+
+    private void scheduleSavedStatusClear(long savedDraftGeneration) {
+        savedStatusClear.stop();
+        savedStatusClear.setOnFinished(event -> {
+            if (!disposed
+                    && draftGeneration == savedDraftGeneration
+                    && "Saved".equals(saveStatus.getText())) {
+                setStatus(saveStatus, "", null);
+            }
+        });
+        savedStatusClear.playFromStart();
     }
 
     private void setStatus(Label label, String text, String styleClass) {

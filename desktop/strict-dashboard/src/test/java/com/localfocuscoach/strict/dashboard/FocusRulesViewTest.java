@@ -32,6 +32,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.Scene;
+import javafx.scene.shape.SVGPath;
 import javafx.util.Duration;
 import org.junit.jupiter.api.Test;
 
@@ -414,6 +415,166 @@ class FocusRulesViewTest {
             assertSemanticColor(view, "#chromeSyncStatus", "successState", "#2f6d45");
         } finally {
             releaseSave.countDown();
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void savedFeedbackClearsAfterTheReferenceDelayAndRevealsChromeStatus() throws Exception {
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                @SuppressWarnings("unchecked")
+                var settings = (Map<String, Object>) request.payload().get("settings");
+                return focusSettingsResponse(4L, 4L, settings);
+            }
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> "Saved".equals(text(view, "#focusSaveStatus")),
+                    "temporary saved feedback");
+            assertFalse(FxTestSupport.call(
+                    () -> view.lookup("#chromeSyncStatus").isVisible()));
+
+            waitForFxDelay(Duration.seconds(1.2));
+            assertEquals("Saved", text(view, "#focusSaveStatus"));
+            assertFalse(FxTestSupport.call(
+                    () -> view.lookup("#chromeSyncStatus").isVisible()));
+
+            waitForFxDelay(Duration.millis(400));
+
+            FxTestSupport.call(() -> {
+                assertEquals("", textOnFxThread(view, "#focusSaveStatus"));
+                assertFalse(view.lookup("#focusSaveStatus")
+                        .getStyleClass()
+                        .contains("successState"));
+                assertTrue(view.lookup("#chromeSyncStatus").isVisible());
+                assertEquals("Synced with Chrome", textOnFxThread(view, "#chromeSyncStatus"));
+                return null;
+            });
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void editingCancelsThePriorSavedClearWhileANewerSaveIsPending() throws Exception {
+        var saveNumber = new AtomicInteger();
+        var secondSaveStarted = new CountDownLatch(1);
+        var releaseSecondSave = new CountDownLatch(1);
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                var currentSave = saveNumber.incrementAndGet();
+                if (currentSave == 2) {
+                    secondSaveStarted.countDown();
+                    await(releaseSecondSave, 3);
+                }
+                @SuppressWarnings("unchecked")
+                var settings = (Map<String, Object>) request.payload().get("settings");
+                return focusSettingsResponse(3L + currentSave, 3L + currentSave, settings);
+            }
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> "Saved".equals(text(view, "#focusSaveStatus")),
+                    "first saved feedback");
+
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "6");
+                return null;
+            });
+            assertTrue(secondSaveStarted.await(1, TimeUnit.SECONDS));
+            FxTestSupport.waitFor(
+                    () -> "Saving changes…".equals(text(view, "#focusSaveStatus")),
+                    "second save pending");
+            waitForFxDelay(Duration.seconds(1.6));
+            assertEquals("Saving changes…", text(view, "#focusSaveStatus"));
+        } finally {
+            releaseSecondSave.countDown();
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void disposeCancelsThePendingSavedFeedbackClear() throws Exception {
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                @SuppressWarnings("unchecked")
+                var settings = (Map<String, Object>) request.payload().get("settings");
+                return focusSettingsResponse(4L, 4L, settings);
+            }
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> "Saved".equals(text(view, "#focusSaveStatus")),
+                    "saved feedback before disposal");
+            FxTestSupport.call(() -> {
+                view.dispose();
+                return null;
+            });
+
+            waitForFxDelay(Duration.seconds(1.6));
+            assertEquals("Saved", text(view, "#focusSaveStatus"));
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void protectionTileUsesTheActualEnabledAndDisabledShieldStates() {
+        var client = new ServiceClient(
+                SECRET,
+                request -> focusSettingsResponse(3L, 3L, settingsPayload(5, 10, false)));
+        var view = styledAutoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            FxTestSupport.call(() -> {
+                var tile = view.lookup("#focusProtectionIconTile");
+                var enabledIcon = view.lookup("#focusProtectionEnabledVisualIcon");
+                var disabledIcon = view.lookup("#focusProtectionDisabledVisualIcon");
+                assertNotNull(tile);
+                assertNotNull(enabledIcon);
+                assertNotNull(disabledIcon);
+                assertFalse(enabledIcon.isVisible());
+                assertTrue(disabledIcon.isVisible());
+                assertTrue(tile.getStyleClass().contains("protectionDisabled"));
+                assertFalse(tile.getStyleClass().contains("protectionActive"));
+                assertEquals(
+                        Color.web("#9ca3af"),
+                        ((SVGPath) view.lookup("#focusProtectionDisabledVisualShield")).getStroke());
+
+                ((CheckBox) view.lookup("#focusProtectionEnabled")).setSelected(true);
+                assertTrue(enabledIcon.isVisible());
+                assertFalse(disabledIcon.isVisible());
+                assertTrue(tile.getStyleClass().contains("protectionActive"));
+                assertFalse(tile.getStyleClass().contains("protectionDisabled"));
+                assertEquals(
+                        Color.web("#16a34a"),
+                        ((SVGPath) view.lookup("#focusProtectionEnabledVisualShield")).getStroke());
+                assertNotNull(view.lookup("#focusProtectionEnabledVisualCheck"));
+                return null;
+            });
+        } finally {
             dispose(view, client);
         }
     }
@@ -934,7 +1095,7 @@ class FocusRulesViewTest {
             delay.playFromStart();
             return null;
         });
-        assertTrue(elapsed.await(1, TimeUnit.SECONDS));
+        assertTrue(elapsed.await((long) Math.ceil(duration.toMillis()) + 1000, TimeUnit.MILLISECONDS));
     }
 
     private static ProtocolMessage focusSettingsResponse(long revision, long appliedRevision) {
@@ -958,6 +1119,11 @@ class FocusRulesViewTest {
     }
 
     private static Map<String, Object> settingsPayload(int budget, int warningScore) {
+        return settingsPayload(budget, warningScore, true);
+    }
+
+    private static Map<String, Object> settingsPayload(
+            int budget, int warningScore, boolean enabled) {
         var rule = Map.<String, Object>of(
                 "enabled", true,
                 "doomscrollBudgetMinutes", budget,
@@ -969,7 +1135,7 @@ class FocusRulesViewTest {
         rules.put("x-timeline", rule);
         rules.put("youtube-shorts", rule);
         return Map.<String, Object>of(
-                "enabled", true,
+                "enabled", enabled,
                 "rules", rules);
     }
 
@@ -1004,8 +1170,12 @@ class FocusRulesViewTest {
     }
 
     private static void await(CountDownLatch latch) {
+        await(latch, 1);
+    }
+
+    private static void await(CountDownLatch latch, long timeoutSeconds) {
         try {
-            if (!latch.await(1, TimeUnit.SECONDS)) {
+            if (!latch.await(timeoutSeconds, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("Timed out waiting for test exchange");
             }
         } catch (InterruptedException exception) {

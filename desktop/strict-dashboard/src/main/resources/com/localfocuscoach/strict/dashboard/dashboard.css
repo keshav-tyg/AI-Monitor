@@ -406,8 +406,15 @@
 }
 
 .dashboard .focusProtectionIconTile {
-    -fx-background-color: #ecfdf3;
     -fx-background-radius: 12;
+}
+
+.dashboard .focusProtectionIconTile.protectionActive {
+    -fx-background-color: #ecfdf3;
+}
+
+.dashboard .focusProtectionIconTile.protectionDisabled {
+    -fx-background-color: #f3f4f6;
 }
 
 .dashboard .focusProtectionTitle,
