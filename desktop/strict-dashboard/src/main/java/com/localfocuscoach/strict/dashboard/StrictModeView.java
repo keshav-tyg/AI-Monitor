@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.beans.value.ChangeListener;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -21,7 +22,11 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 
 public final class StrictModeView extends BorderPane {
     private static final String STATUS_REQUEST = "dashboard.status";
@@ -45,7 +50,7 @@ public final class StrictModeView extends BorderPane {
         this.client = Objects.requireNonNull(client);
         this.clock = Objects.requireNonNull(clock);
         this.unlockAction = Objects.requireNonNull(unlockAction);
-        setStyle("-fx-background-color: #f7f7f4;");
+        setStyle("-fx-background-color: #f0efe9;");
         getStyleClass().add("strictModeView");
         refreshTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(1), event -> refresh()));
         refreshTimer.setCycleCount(Timeline.INDEFINITE);
@@ -101,14 +106,18 @@ public final class StrictModeView extends BorderPane {
             ((Label) lookup("#serviceFeedback")).setText(initialFeedback);
             return;
         }
-        var title = title("Start Strict Mode");
+        var title = title("Strict Mode");
         var description = new Label(
-                "Choose a timed commitment or continue until you complete an unlock challenge.");
+                "Keeps your protection active during a chosen period. While active, rules cannot "
+                        + "be weakened, deleted, or disabled — only strengthened.");
         description.setWrapText(true);
-        var header = new VBox(8, title, description);
+        description.getStyleClass().add("strictModeDescription");
+        var titleRow = new HBox(10, lockTile("strictModeHeader"), title);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+        var header = new VBox(6, titleRow, description);
         header.setId("strictModeHeader");
 
-        var timed = new RadioButton("Timed");
+        var timed = new RadioButton("Timed session");
         timed.setId("timedMode");
         var indefinite = new RadioButton("Indefinite");
         indefinite.setId("indefiniteMode");
@@ -119,14 +128,27 @@ public final class StrictModeView extends BorderPane {
 
         var duration = new TextField("60");
         duration.setId("durationMinutes");
-        duration.setPromptText("Minutes");
-        duration.setMaxWidth(120);
-        var durationLabel = new Label("minutes");
-        var durationRow = new HBox(8, duration, durationLabel);
+        duration.setManaged(false);
+        duration.setVisible(false);
+
+        var durationHours = new TextField("1");
+        var durationMinutePart = new TextField("0");
+        var hoursStepper = DashboardControls.stepper(
+                "durationHours", durationHours, 0, 8_760, "hr");
+        var minutesStepper = DashboardControls.stepper(
+                "durationMinutePart", durationMinutePart, 0, 59, "min");
+        var durationRow = new HBox(20, hoursStepper, minutesStepper, duration);
+        durationRow.setId("durationStepper");
+        durationRow.getStyleClass().add("strictDurationStepper");
         durationRow.setAlignment(Pos.CENTER_LEFT);
+        ChangeListener<String> updateDuration = (observable, previous, current) ->
+                updateDurationMinutes(durationHours, durationMinutePart, duration);
+        durationHours.textProperty().addListener(updateDuration);
+        durationMinutePart.textProperty().addListener(updateDuration);
 
         var earlyExit = new CheckBox("Require a typing challenge for early exit");
         earlyExit.setId("earlyExitChallenge");
+        earlyExit.getStyleClass().add("figmaIntervention");
         var serviceFeedback = new Label(initialFeedback);
         serviceFeedback.setId("serviceFeedback");
         serviceFeedback.setWrapText(true);
@@ -136,41 +158,142 @@ public final class StrictModeView extends BorderPane {
         feedback.setWrapText(true);
         feedback.getStyleClass().add("errorState");
 
-        var start = new Button("Start session");
+        var start = new Button("Start Strict Mode");
         start.setId("startSession");
+        start.getStyleClass().add("strictPrimaryAction");
+        start.setMaxWidth(Double.MAX_VALUE);
         start.setDefaultButton(true);
         start.setOnAction(event -> startSession(timed.isSelected(), duration, earlyExit, feedback));
 
-        var updateMode = (javafx.beans.value.ChangeListener<javafx.scene.control.Toggle>)
+        var timedOption = sessionOption(
+                "timedSessionOption",
+                timed,
+                "Automatically ends after a set time");
+        var indefiniteOption = sessionOption(
+                "indefiniteSessionOption",
+                indefinite,
+                "Ends when you complete the unlock challenge");
+        var optionRow = new HBox(12, timedOption, indefiniteOption);
+        optionRow.setId("sessionTypeOptions");
+        HBox.setHgrow(timedOption, Priority.ALWAYS);
+        HBox.setHgrow(indefiniteOption, Priority.ALWAYS);
+        var divider = new Region();
+        divider.setId("durationDivider");
+        divider.getStyleClass().add("strictModeDivider");
+        divider.setMinHeight(1);
+        divider.setPrefHeight(1);
+        divider.setMaxHeight(1);
+        var durationTitle = new Label("DURATION");
+        durationTitle.setId("durationLabel");
+        durationTitle.getStyleClass().add("strictSectionLabel");
+
+        var updateMode = (ChangeListener<javafx.scene.control.Toggle>)
                 (observable, previous, current) -> {
                     var isTimed = timed.isSelected();
-                    setShown(duration, isTimed);
-                    setShown(durationLabel, isTimed);
-                    durationRow.setManaged(isTimed);
-                    durationRow.setVisible(isTimed);
+                    setShown(divider, isTimed);
+                    setShown(durationTitle, isTimed);
+                    setShown(durationRow, isTimed);
                     setShown(earlyExit, isTimed);
+                    updateSessionOptionState(timedOption, isTimed);
+                    updateSessionOptionState(indefiniteOption, !isTimed);
                 };
         modes.selectedToggleProperty().addListener(updateMode);
+        updateMode.changed(modes.selectedToggleProperty(), null, timed);
 
-        var sessionTitle = new Label("Session setup");
+        var sessionTitle = new Label("Session type");
         sessionTitle.getStyleClass().add("strictModeCardTitle");
-        var card = new VBox(
-                14,
+        var sessionCard = DashboardControls.card(
+                "sessionTypeCard",
                 sessionTitle,
-                new HBox(18, timed, indefinite),
-                durationRow,
+                optionRow,
+                divider,
+                durationTitle,
+                durationRow);
+        sessionCard.getStyleClass().add("strictModeCard");
+
+        var preparationTitle = new Label("Unlock sequence");
+        preparationTitle.getStyleClass().add("strictModeCardTitle");
+        var preparationCopy = new Label(
+                "If this session can end early, Local Focus Coach will generate the real "
+                        + "500-character unlock sequence when you begin the challenge. Mistakes "
+                        + "won't be revealed as you type.");
+        preparationCopy.setWrapText(true);
+        preparationCopy.getStyleClass().add("strictCardDescription");
+        var sequenceNotice = new Label(
+                "Secure 500-character challenge generated on unlock");
+        sequenceNotice.setId("unlockPreparationSequence");
+        sequenceNotice.setWrapText(true);
+        sequenceNotice.setMaxWidth(Double.MAX_VALUE);
+        sequenceNotice.getStyleClass().add("figmaSequencePanel");
+        var challengeLabel = new Label("EARLY EXIT POLICY");
+        challengeLabel.getStyleClass().add("strictSectionLabel");
+        var preparationCard = DashboardControls.card(
+                "unlockPreparationCard",
+                preparationTitle,
+                preparationCopy,
+                sequenceNotice,
+                challengeLabel,
                 earlyExit,
                 serviceFeedback,
-                feedback,
-                start);
-        card.getStyleClass().add("strictModeCard");
-        card.setPadding(new Insets(20));
-        var content = new VBox(20, header, card);
+                feedback);
+        preparationCard.getStyleClass().add("unlockPreparationCard");
+
+        var safetyIcon = new Label("i");
+        safetyIcon.getStyleClass().add("strictSafetyIcon");
+        var safetyTitle = new Label("Good to know");
+        safetyTitle.getStyleClass().add("strictSafetyTitle");
+        var safetyCopy = new Label(
+                "You can always make rules stricter during a session. Timed sessions end "
+                        + "automatically; indefinite sessions require the secure unlock challenge.");
+        safetyCopy.setWrapText(true);
+        safetyCopy.getStyleClass().add("strictSafetyCopy");
+        var safetyText = new VBox(3, safetyTitle, safetyCopy);
+        var safetyCard = new HBox(12, safetyIcon, safetyText);
+        safetyCard.setId("strictSafetyCard");
+        safetyCard.getStyleClass().add("figmaSafetyCard");
+        safetyCard.setAlignment(Pos.TOP_LEFT);
+        HBox.setHgrow(safetyText, Priority.ALWAYS);
+
+        var content = new VBox(16, header, sessionCard, preparationCard, safetyCard, start);
         content.setId("idleView");
         content.setMaxWidth(520);
         content.setAlignment(Pos.CENTER_LEFT);
         setCenter(content);
-        BorderPane.setMargin(content, new Insets(32));
+        BorderPane.setMargin(content, new Insets(24, 28, 28, 28));
+    }
+
+    private static VBox sessionOption(String id, RadioButton control, String detailText) {
+        control.getStyleClass().add("strictSessionChoice");
+        var detail = new Label(detailText);
+        detail.setWrapText(true);
+        detail.getStyleClass().add("strictSessionOptionDetail");
+        var option = new VBox(4, control, detail);
+        option.setId(id);
+        option.getStyleClass().add("strictSessionOption");
+        option.setMinWidth(0);
+        option.setPrefWidth(0);
+        option.setMaxWidth(Double.MAX_VALUE);
+        option.setOnMouseClicked(event -> control.setSelected(true));
+        return option;
+    }
+
+    private static void updateSessionOptionState(VBox option, boolean selected) {
+        option.getStyleClass().remove("selectedSessionOption");
+        if (selected) {
+            option.getStyleClass().add("selectedSessionOption");
+        }
+    }
+
+    private static void updateDurationMinutes(
+            TextField hours, TextField minutePart, TextField totalMinutes) {
+        try {
+            var parsedHours = Long.parseLong(hours.getText().trim());
+            var parsedMinutes = Long.parseLong(minutePart.getText().trim());
+            var total = Math.addExact(Math.multiplyExact(parsedHours, 60), parsedMinutes);
+            totalMinutes.setText(Long.toString(total));
+        } catch (ArithmeticException | NumberFormatException exception) {
+            totalMinutes.setText("");
+        }
     }
 
     private void startSession(
@@ -233,7 +356,9 @@ public final class StrictModeView extends BorderPane {
         var isWarning = warningEndsAt != null;
         var activeTitle = title(isWarning ? "Restore the Chrome extension" : "Strict Mode is active");
         activeTitle.setId("activeTitle");
-        var header = new VBox(8, activeTitle);
+        var titleRow = new HBox(10, lockTile("activeSessionHeader"), activeTitle);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+        var header = new VBox(8, titleRow);
         header.setId("strictModeHeader");
 
         var detail = new Label(isWarning
@@ -259,9 +384,11 @@ public final class StrictModeView extends BorderPane {
 
         var sessionTitle = new Label("Current session");
         sessionTitle.getStyleClass().add("strictModeCardTitle");
-        var sessionCard = new VBox(14, sessionTitle, detail, sessionCountdown, unlock);
+        sessionCountdown.getStyleClass().add("activeSessionCountdown");
+        unlock.getStyleClass().add("strictSecondaryAction");
+        var sessionCard = DashboardControls.card(
+                "activeSessionCard", sessionTitle, detail, sessionCountdown, unlock);
         sessionCard.getStyleClass().add("strictModeCard");
-        sessionCard.setPadding(new Insets(20));
         if (!isWarning) {
             sessionCard.getChildren().add(warningCountdown);
         }
@@ -271,15 +398,15 @@ public final class StrictModeView extends BorderPane {
             var warningTitle = new Label("Connection warning");
             warningTitle.getStyleClass().add("strictModeWarningTitle");
             var warningCard = new VBox(8, warningTitle, warningCountdown);
+            warningCard.setId("strictConnectionWarningCard");
             warningCard.getStyleClass().add("strictModeWarningCard");
-            warningCard.setPadding(new Insets(16));
             content.getChildren().add(warningCard);
         }
         content.getChildren().add(sessionCard);
-        content.setMaxWidth(560);
+        content.setMaxWidth(520);
         content.setAlignment(Pos.CENTER_LEFT);
         setCenter(content);
-        BorderPane.setMargin(content, new Insets(32));
+        BorderPane.setMargin(content, new Insets(24, 28, 28, 28));
     }
 
     private String activeDescription(Map<String, Object> status) {
@@ -321,6 +448,16 @@ public final class StrictModeView extends BorderPane {
         label.getStyleClass().add("strictModeTitle");
         label.setWrapText(true);
         return label;
+    }
+
+    private static StackPane lockTile(String idPrefix) {
+        var icon = DashboardControls.lockIcon(idPrefix, Color.WHITE);
+        var tile = new StackPane(icon);
+        tile.getStyleClass().add("strictHeaderLockTile");
+        tile.setMinSize(32, 32);
+        tile.setPrefSize(32, 32);
+        tile.setMaxSize(32, 32);
+        return tile;
     }
 
     private static void setShown(javafx.scene.Node node, boolean shown) {

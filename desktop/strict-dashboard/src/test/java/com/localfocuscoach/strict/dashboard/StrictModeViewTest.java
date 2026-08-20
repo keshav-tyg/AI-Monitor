@@ -121,16 +121,47 @@ class StrictModeViewTest {
     }
 
     @Test
-    void idleModeRendersTheStrictModeHeaderAndCard() {
+    void idleModeRendersTheFigmaSessionPreparationAndSafetyCards() {
         var view = idleView(new ArrayList<>());
         applyDashboardCss(view);
 
         FxTestSupport.call(() -> {
             assertNotNull(view.lookup("#strictModeHeader"));
-            assertEquals(1, view.lookupAll(".strictModeCard").size());
-            assertNotNull(((DropShadow) view.lookup(".strictModeCard").getEffect()));
+            assertNotNull(view.lookup("#sessionTypeCard"));
+            assertNotNull(view.lookup("#timedSessionOption"));
+            assertNotNull(view.lookup("#indefiniteSessionOption"));
+            assertNotNull(view.lookup("#durationStepper"));
+            assertNotNull(view.lookup("#unlockPreparationCard"));
+            assertNotNull(view.lookup("#strictSafetyCard"));
+            assertTrue(view.lookup("#timedSessionOption")
+                    .getStyleClass()
+                    .contains("selectedSessionOption"));
+            assertTrue(view.lookup("#strictSafetyCard")
+                    .getStyleClass()
+                    .contains("figmaSafetyCard"));
+            assertNotNull(((DropShadow) view.lookup("#sessionTypeCard").getEffect()));
             return null;
         });
+    }
+
+    @Test
+    void durationSteppersTranslateHoursAndMinutesIntoTheExistingStartPayload() {
+        var starts = new ArrayList<ProtocolMessage>();
+        var view = idleView(starts);
+
+        FxTestSupport.call(() -> {
+            assertEquals("1", ((TextField) view.lookup("#durationHours")).getText());
+            assertEquals("0", ((TextField) view.lookup("#durationMinutePart")).getText());
+            ((Button) view.lookup("#durationHoursIncrease")).fire();
+            ((Button) view.lookup("#durationMinutePartIncrease")).fire();
+            assertEquals("121", ((TextField) view.lookup("#durationMinutes")).getText());
+            ((Button) view.lookup("#startSession")).fire();
+            return null;
+        });
+        FxTestSupport.waitFor(() -> starts.size() == 1, "stepped timed session start");
+
+        assertEquals("TIMED", starts.getFirst().payload().get("mode"));
+        assertEquals("2026-08-18T14:01:00Z", starts.getFirst().payload().get("endsAt"));
     }
 
     @Test
@@ -192,8 +223,16 @@ class StrictModeViewTest {
         FxTestSupport.call(() -> {
             ((RadioButton) view.lookup("#indefiniteMode")).fire();
             var earlyExit = (CheckBox) view.lookup("#earlyExitChallenge");
+            assertTrue(view.lookup("#indefiniteSessionOption")
+                    .getStyleClass()
+                    .contains("selectedSessionOption"));
+            assertFalse(view.lookup("#timedSessionOption")
+                    .getStyleClass()
+                    .contains("selectedSessionOption"));
             assertFalse(earlyExit.isVisible());
             assertFalse(earlyExit.isManaged());
+            assertFalse(view.lookup("#durationStepper").isVisible());
+            assertFalse(view.lookup("#durationLabel").isVisible());
             assertFalse(((TextField) view.lookup("#durationMinutes")).isVisible());
             ((Button) view.lookup("#startSession")).fire();
             return null;
@@ -224,6 +263,7 @@ class StrictModeViewTest {
 
         FxTestSupport.call(() -> {
             assertEquals("Restore the Chrome extension", text(view, "#activeTitle"));
+            assertNotNull(view.lookup("#activeSessionCard"));
             assertEquals("25 seconds remaining", text(view, "#warningCountdown"));
             var warningCountdown = (Label) view.lookup("#warningCountdown");
             assertTrue(warningCountdown.getStyleClass().contains("pendingState"));
@@ -252,6 +292,7 @@ class StrictModeViewTest {
 
         FxTestSupport.call(() -> {
             assertEquals("Strict Mode is active", text(view, "#activeTitle"));
+            assertNotNull(view.lookup("#activeSessionCard"));
             assertEquals("1 hour remaining", text(view, "#sessionCountdown"));
             var warningCountdown = (Label) view.lookup("#warningCountdown");
             assertNotNull(warningCountdown);
