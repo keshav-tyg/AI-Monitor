@@ -2,6 +2,7 @@ package com.localfocuscoach.strict.dashboard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.localfocuscoach.strict.protocol.ProtocolMessage;
@@ -83,6 +84,10 @@ class UnlockChallengeViewTest {
         var view = view(requests, false, new AtomicBoolean());
 
         FxTestSupport.call(() -> {
+            assertNotNull(view.lookup("#unlockHeader"));
+            assertEquals(1, view.lookupAll(".unlockChallengeCard").size());
+            view.onPaste();
+            assertEquals("", view.currentCandidate());
             var target = (Label) view.lookup("#challengeTarget");
             assertTrue(target.isWrapText());
             assertEquals("Monospaced", target.getFont().getFamily());
