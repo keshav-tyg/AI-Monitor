@@ -2,6 +2,7 @@ package com.localfocuscoach.strict.dashboard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,10 +12,17 @@ import java.util.List;
 import java.util.Map;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
+import javafx.scene.shape.SVGPath;
+import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import org.junit.jupiter.api.Test;
 
 class DashboardAppTest {
@@ -75,6 +83,89 @@ class DashboardAppTest {
         } finally {
             dispose(dashboard, client);
         }
+    }
+
+    @Test
+    void usesVectorShellIconsAndASeparatePrivacyIndicator() {
+        var client = client(false);
+        var dashboard = FxTestSupport.call(() -> {
+            var view = new DashboardApp.DashboardView(client);
+            new Scene(view, 1100, 760);
+            view.applyCss();
+            return view;
+        });
+        try {
+            FxTestSupport.call(() -> {
+                assertInstanceOf(SVGPath.class, dashboard.lookup("#dashboardBrandShield"));
+                assertInstanceOf(SVGPath.class, dashboard.lookup("#dashboardBrandCheck"));
+                assertInstanceOf(SVGPath.class, dashboard.lookup("#focusRulesNavigationShield"));
+                assertInstanceOf(SVGPath.class, dashboard.lookup("#strictModeNavigationLockBody"));
+                assertInstanceOf(SVGPath.class, dashboard.lookup("#strictModeNavigationLockShackle"));
+                assertEquals(
+                        Color.WHITE,
+                        ((SVGPath) dashboard.lookup("#focusRulesNavigationShield")).getStroke());
+                assertEquals(
+                        Color.web("#52606f"),
+                        ((SVGPath) dashboard.lookup("#strictModeNavigationLockBody")).getStroke());
+                var indicator = assertInstanceOf(
+                        Circle.class, dashboard.lookup("#dashboardPrivacyIndicator"));
+                assertEquals(Color.web("#22c55e"), indicator.getFill());
+                var title = (Label) dashboard.lookup("#dashboardPrivacyTitle");
+                assertEquals("Local-only privacy", title.getText());
+                assertEquals(Color.web("#1c1c1e"), title.getTextFill());
+                assertFalse(title.getText().contains("●"));
+                ((Button) dashboard.lookup("#strictModeNavigation")).fire();
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> dashboard.lookup("#durationMinutes") != null,
+                    "Strict Mode for navigation icon state");
+            FxTestSupport.call(() -> {
+                assertEquals(
+                        Color.web("#52606f"),
+                        ((SVGPath) dashboard.lookup("#focusRulesNavigationShield")).getStroke());
+                assertEquals(
+                        Color.WHITE,
+                        ((SVGPath) dashboard.lookup("#strictModeNavigationLockBody")).getStroke());
+                return null;
+            });
+        } finally {
+            dispose(dashboard, client);
+        }
+    }
+
+    @Test
+    void edgeAndCornerResizeHonorsTheReferenceMinimumSize() {
+        var client = client(false);
+        FxTestSupport.call(() -> {
+            var stage = new Stage();
+            stage.initStyle(StageStyle.UNDECORATED);
+            var dashboard = new DashboardApp.DashboardView(client, stage);
+            stage.setScene(new Scene(dashboard, 900, 700));
+            stage.setX(100);
+            stage.setY(100);
+            stage.setWidth(900);
+            stage.setHeight(700);
+            dashboard.applyCss();
+            dashboard.layout();
+            try {
+                fireMouse(dashboard, MouseEvent.MOUSE_MOVED, 1, 1, 101, 101, MouseButton.NONE);
+                assertEquals(Cursor.NW_RESIZE, dashboard.getCursor());
+
+                fireMouse(dashboard, MouseEvent.MOUSE_PRESSED, 1, 1, 101, 101, MouseButton.PRIMARY);
+                fireMouse(dashboard, MouseEvent.MOUSE_DRAGGED, 400, 400, 500, 500, MouseButton.PRIMARY);
+
+                assertEquals(840.0, stage.getWidth(), 0.1);
+                assertEquals(620.0, stage.getHeight(), 0.1);
+                assertEquals(160.0, stage.getX(), 0.1);
+                assertEquals(180.0, stage.getY(), 0.1);
+            } finally {
+                dashboard.dispose();
+                stage.close();
+            }
+            return null;
+        });
+        client.close();
     }
 
     @Test
@@ -248,6 +339,35 @@ class DashboardAppTest {
             }
         }
         return false;
+    }
+
+    private static void fireMouse(
+            Node target,
+            javafx.event.EventType<MouseEvent> type,
+            double x,
+            double y,
+            double screenX,
+            double screenY,
+            MouseButton button) {
+        target.fireEvent(new MouseEvent(
+                type,
+                x,
+                y,
+                screenX,
+                screenY,
+                button,
+                button == MouseButton.NONE ? 0 : 1,
+                false,
+                false,
+                false,
+                false,
+                button == MouseButton.PRIMARY,
+                false,
+                false,
+                false,
+                false,
+                false,
+                null));
     }
 
     private static void dispose(DashboardApp.DashboardView dashboard, ServiceClient client) {
