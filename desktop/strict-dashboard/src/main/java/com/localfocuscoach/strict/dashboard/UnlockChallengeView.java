@@ -39,6 +39,7 @@ public final class UnlockChallengeView extends BorderPane {
         this.client = Objects.requireNonNull(client);
         this.returnToDashboard = Objects.requireNonNull(returnToDashboard);
         setStyle("-fx-background-color: #f7f7f4;");
+        getStyleClass().add("unlockChallengeView");
         configureCandidate();
         render();
         beginChallenge();
@@ -121,16 +122,18 @@ public final class UnlockChallengeView extends BorderPane {
 
     private void render() {
         var title = new Label("Unlock challenge");
-        title.setStyle("-fx-font-size: 28px; -fx-font-weight: bold;");
+        title.getStyleClass().add("unlockChallengeTitle");
         var instructions = new Label(
                 "Type the complete target exactly. You can correct mistakes with Backspace, but clipboard and drag-and-drop input are disabled.");
         instructions.setWrapText(true);
+        var header = new VBox(8, title, instructions);
+        header.setId("unlockHeader");
 
         targetLabel.setId("challengeTarget");
         targetLabel.setFont(Font.font("Monospaced", 14));
         targetLabel.setWrapText(true);
         targetLabel.setMaxWidth(Double.MAX_VALUE);
-        targetLabel.setStyle("-fx-padding: 14; -fx-background-color: #ecece7;");
+        targetLabel.getStyleClass().add("unlockChallengeTarget");
 
         candidate.setId("challengeCandidate");
         candidate.setPromptText("Type the full challenge here");
@@ -154,11 +157,14 @@ public final class UnlockChallengeView extends BorderPane {
         feedback.setStyle("-fx-text-fill: #8a331f;");
 
         var actions = new HBox(10, submit, retry, back);
-        var content = new VBox(14, title, instructions, targetLabel, candidate, feedback, actions);
+        var card = new VBox(14, targetLabel, candidate, feedback, actions);
+        card.getStyleClass().add("unlockChallengeCard");
+        card.setPadding(new Insets(20));
+        var content = new VBox(20, header, card);
         content.setAlignment(Pos.CENTER_LEFT);
         content.setMaxWidth(680);
         setCenter(content);
-        BorderPane.setMargin(content, new Insets(40));
+        BorderPane.setMargin(content, new Insets(32));
     }
 
     private void configureCandidate() {

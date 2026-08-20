@@ -46,6 +46,7 @@ public final class StrictModeView extends BorderPane {
         this.clock = Objects.requireNonNull(clock);
         this.unlockAction = Objects.requireNonNull(unlockAction);
         setStyle("-fx-background-color: #f7f7f4;");
+        getStyleClass().add("strictModeView");
         refreshTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(1), event -> refresh()));
         refreshTimer.setCycleCount(Timeline.INDEFINITE);
         sceneProperty().addListener((observable, previous, current) -> {
@@ -104,6 +105,8 @@ public final class StrictModeView extends BorderPane {
         var description = new Label(
                 "Choose a timed commitment or continue until you complete an unlock challenge.");
         description.setWrapText(true);
+        var header = new VBox(8, title, description);
+        header.setId("strictModeHeader");
 
         var timed = new RadioButton("Timed");
         timed.setId("timedMode");
@@ -127,11 +130,11 @@ public final class StrictModeView extends BorderPane {
         var serviceFeedback = new Label(initialFeedback);
         serviceFeedback.setId("serviceFeedback");
         serviceFeedback.setWrapText(true);
-        serviceFeedback.setStyle("-fx-text-fill: #8a331f;");
+        serviceFeedback.getStyleClass().add("errorState");
         var feedback = new Label();
         feedback.setId("startFeedback");
         feedback.setWrapText(true);
-        feedback.setStyle("-fx-text-fill: #8a331f;");
+        feedback.getStyleClass().add("errorState");
 
         var start = new Button("Start session");
         start.setId("startSession");
@@ -149,21 +152,25 @@ public final class StrictModeView extends BorderPane {
                 };
         modes.selectedToggleProperty().addListener(updateMode);
 
-        var content = new VBox(
-                16,
-                title,
-                description,
+        var sessionTitle = new Label("Session setup");
+        sessionTitle.getStyleClass().add("strictModeCardTitle");
+        var card = new VBox(
+                14,
+                sessionTitle,
                 new HBox(18, timed, indefinite),
                 durationRow,
                 earlyExit,
                 serviceFeedback,
                 feedback,
                 start);
+        card.getStyleClass().add("strictModeCard");
+        card.setPadding(new Insets(20));
+        var content = new VBox(20, header, card);
         content.setId("idleView");
         content.setMaxWidth(520);
         content.setAlignment(Pos.CENTER_LEFT);
         setCenter(content);
-        BorderPane.setMargin(content, new Insets(48));
+        BorderPane.setMargin(content, new Insets(32));
     }
 
     private void startSession(
@@ -226,6 +233,8 @@ public final class StrictModeView extends BorderPane {
         var isWarning = warningEndsAt != null;
         var activeTitle = title(isWarning ? "Restore the Chrome extension" : "Strict Mode is active");
         activeTitle.setId("activeTitle");
+        var header = new VBox(8, activeTitle);
+        header.setId("strictModeHeader");
 
         var detail = new Label(isWarning
                 ? "The extension connection is unavailable. Restore it before the countdown ends."
@@ -238,7 +247,7 @@ public final class StrictModeView extends BorderPane {
 
         var warningCountdown = new Label(isWarning ? remainingText(warningEndsAt) : "");
         warningCountdown.setId("warningCountdown");
-        warningCountdown.setStyle("-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #a23a25;");
+        warningCountdown.getStyleClass().addAll("strictModeWarningCountdown", "pendingState");
         setShown(warningCountdown, isWarning);
 
         var unlock = new Button("Begin unlock challenge");
@@ -248,11 +257,29 @@ public final class StrictModeView extends BorderPane {
         setShown(unlock, canUnlock);
         unlock.setOnAction(event -> unlockAction.run());
 
-        var content = new VBox(16, activeTitle, detail, warningCountdown, sessionCountdown, unlock);
+        var sessionTitle = new Label("Current session");
+        sessionTitle.getStyleClass().add("strictModeCardTitle");
+        var sessionCard = new VBox(14, sessionTitle, detail, sessionCountdown, unlock);
+        sessionCard.getStyleClass().add("strictModeCard");
+        sessionCard.setPadding(new Insets(20));
+        if (!isWarning) {
+            sessionCard.getChildren().add(warningCountdown);
+        }
+
+        var content = new VBox(20, header);
+        if (isWarning) {
+            var warningTitle = new Label("Connection warning");
+            warningTitle.getStyleClass().add("strictModeWarningTitle");
+            var warningCard = new VBox(8, warningTitle, warningCountdown);
+            warningCard.getStyleClass().add("strictModeWarningCard");
+            warningCard.setPadding(new Insets(16));
+            content.getChildren().add(warningCard);
+        }
+        content.getChildren().add(sessionCard);
         content.setMaxWidth(560);
         content.setAlignment(Pos.CENTER_LEFT);
         setCenter(content);
-        BorderPane.setMargin(content, new Insets(48));
+        BorderPane.setMargin(content, new Insets(32));
     }
 
     private String activeDescription(Map<String, Object> status) {
@@ -291,7 +318,7 @@ public final class StrictModeView extends BorderPane {
 
     private static Label title(String text) {
         var label = new Label(text);
-        label.setStyle("-fx-font-size: 28px; -fx-font-weight: bold;");
+        label.getStyleClass().add("strictModeTitle");
         label.setWrapText(true);
         return label;
     }
