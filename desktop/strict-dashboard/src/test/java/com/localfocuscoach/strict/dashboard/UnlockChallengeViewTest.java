@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import javafx.event.Event;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
@@ -20,6 +21,8 @@ import javafx.scene.input.DragEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.TransferMode;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import org.junit.jupiter.api.Test;
 
 class UnlockChallengeViewTest {
@@ -97,6 +100,17 @@ class UnlockChallengeViewTest {
             return null;
         });
         assertEquals(List.of("dashboard.beginUnlock"), requestTypes(requests));
+    }
+
+    @Test
+    void referenceWidthPinsUnlockContentToTheFigmaLeftInset() {
+        var view = view(new ArrayList<>(), false, new AtomicBoolean());
+        layoutAtReferenceSize(view);
+
+        FxTestSupport.call(() -> {
+            assertEquals(28.0, ((Region) view.getCenter()).getLayoutX(), 0.1);
+            return null;
+        });
     }
 
     @Test
@@ -286,6 +300,16 @@ class UnlockChallengeViewTest {
                 () -> TARGET.equals(((Label) view.lookup("#challengeTarget")).getText()),
                 "challenge target");
         return view;
+    }
+
+    private static void layoutAtReferenceSize(UnlockChallengeView view) {
+        FxTestSupport.call(() -> {
+            var root = new StackPane(view);
+            new Scene(root, 892, 720);
+            root.applyCss();
+            root.layout();
+            return null;
+        });
     }
 
     private static KeyEvent keyPressed(KeyCode code, boolean control, boolean meta) {

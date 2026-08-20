@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.GridPane;
@@ -121,8 +122,16 @@ class DashboardVisualRegressionTest {
                 var preparation = (Region) dashboard.lookup("#unlockPreparationCard");
                 var safety = (Region) dashboard.lookup("#strictSafetyCard");
                 var start = (Button) dashboard.lookup("#startSession");
+                var header = (Region) dashboard.lookup("#strictModeHeader");
+                var contentViewport = (ScrollPane) dashboard.lookup("#dashboardContentViewport");
+                var viewport = contentViewport.lookup(".viewport");
 
                 assertNotNull(session);
+                assertEquals(
+                        28.0,
+                        header.localToScene(0, 0).getX()
+                                - viewport.localToScene(0, 0).getX(),
+                        1.0);
                 assertEquals(2, options.getChildren().size());
                 assertTrue(timed.getStyleClass().contains("selectedSessionOption"));
                 assertEquals(timed.getWidth(), indefinite.getWidth(), 1.0);

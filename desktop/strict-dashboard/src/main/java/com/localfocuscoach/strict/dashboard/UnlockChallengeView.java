@@ -202,6 +202,7 @@ public final class UnlockChallengeView extends BorderPane {
         content.setAlignment(Pos.CENTER_LEFT);
         content.setMaxWidth(520);
         setCenter(content);
+        BorderPane.setAlignment(content, Pos.TOP_LEFT);
         BorderPane.setMargin(content, new Insets(24, 28, 28, 28));
     }
 
