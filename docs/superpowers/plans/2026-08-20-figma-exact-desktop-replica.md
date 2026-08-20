@@ -15,6 +15,7 @@
 - Keep production JavaFX; do not add React, Tailwind, a WebView, or a browser runtime.
 - Do not change service, relay, browser extension, persistence, native messaging, or Gemini/model code.
 - Reference visual target is 1100 × 760; title bar is 40 px and sidebar is 208 px.
+- Use an undecorated JavaFX stage with the custom Figma title bar; do not show a second system title bar inside the reference frame.
 - Use Figma tokens: canvas `#F0EFE9`, sidebar `#E8E7E1`, primary `#2F6B4A`, foreground `#1C1C1E`, muted `#6E6E73`, radius 12–16 px, and restrained card shadows.
 - Preserve all accessible control IDs except the already removed `#saveFocusRules`; retain current service payloads and numeric `warningScore` behavior.
 - Retain the exact 700 ms auto-save delay, valid-only requests, latest-draft queue, refresh-generation guard, disposal guards, and Chrome sync polling.
@@ -52,7 +53,7 @@
 - Modify: `desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/DashboardAppTest.java`
 
 **Interfaces:**
-- `DashboardControls.switchBox(CheckBox control)` returns a `Region` styled as a Figma green/off switch while retaining the supplied `CheckBox` and its ID in the scene graph.
+- `DashboardControls.switchBox(CheckBox control)` returns an `HBox` styled as a Figma green/off switch while retaining the supplied `CheckBox` and its ID in the scene graph.
 - `DashboardControls.stepper(String fieldId, TextField field, int minimum, int maximum, String unit)` returns a `HBox` with `fieldId + "Decrease"` and `fieldId + "Increase"` button IDs and updates the existing field only within the supplied range.
 - `DashboardControls.segmented(ToggleGroup group, Map<FocusSensitivity, RadioButton> buttons)` returns a three-child `HBox` retaining the supplied radio-button IDs.
 - `DashboardControls.card(String id, Node... children)` returns a `VBox` with `figmaCard` style class and the given ID.
@@ -91,7 +92,7 @@ Expected: FAIL because there is no macOS title-bar node or native control builde
 
 - [ ] **Step 3: Implement the shell and controls**
 
-Set the dashboard scene to 1100 × 760 while retaining a sensible minimum size. In `DashboardView`, add `#macosTitleBar` with three decorative traffic-light nodes and centered title, then mount a 208 px `#dashboardSidebar` matching the Figma logo/navigation/privacy layout. Make the center viewport and bottom status area independently scroll/pin capable.
+Set the dashboard scene to 1100 × 760 while retaining a sensible minimum size. Initialize the runtime `Stage` as undecorated, use `#macosTitleBar` as its draggable 40 px title area, and retain a package-visible `DashboardView(ServiceClient)` constructor for tests that have no `Stage`. Add three decorative traffic-light nodes and centered title, then mount a 208 px `#dashboardSidebar` matching the Figma logo/navigation/privacy layout. Make the center viewport and bottom status area independently scroll/pin capable.
 
 Implement `DashboardControls` without new dependencies. Switches must be `CheckBox`-backed; segmented options must be `RadioButton`-backed; steppers must update existing `TextField` values and never emit an out-of-range number. Apply `figma*` style classes only; put exact color, radius, and shadow definitions in `dashboard.css`.
 
@@ -184,6 +185,7 @@ git commit -m "feat(dashboard): replicate Figma focus rules"
 - Modify: `desktop/strict-dashboard/src/main/resources/com/localfocuscoach/strict/dashboard/dashboard.css`
 - Modify: `desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/StrictModeViewTest.java`
 - Modify: `desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/UnlockChallengeViewTest.java`
+- Modify: `desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/DashboardVisualRegressionTest.java`
 
 **Interfaces:**
 - Idle Strict Mode produces `#strictModeHeader`, `#sessionTypeCard`, `#timedSessionOption`, `#indefiniteSessionOption`, `#durationStepper`, `#unlockPreparationCard`, `#strictSafetyCard`, and `#startSession`.
@@ -205,6 +207,8 @@ assertTrue(unlock.lookup("#challengeTarget").getStyleClass().contains("figmaSequ
 ```
 
 Keep and extend the existing tests to assert: a timed session still sends `mode=TIMED`, ISO `endsAt`, and the actual early-exit choice; an indefinite session always sends `mode=INDEFINITE` plus a challenge; ordinary/restore-warning active states retain their existing IDs; paste, drop, context menu, clipboard shortcuts, backspace, full-length enablement, and hidden mismatch behavior remain unchanged.
+
+Extend `DashboardVisualRegressionTest` with a reference-size Strict Mode snapshot/bounds assertion for the selected session option, `#unlockPreparationCard`, `#strictSafetyCard`, full-width `#startSession`, and amber warning class.
 
 - [ ] **Step 2: Run the focused tests to prove RED**
 
@@ -235,7 +239,8 @@ git add desktop/strict-dashboard/src/main/java/com/localfocuscoach/strict/dashbo
   desktop/strict-dashboard/src/main/java/com/localfocuscoach/strict/dashboard/UnlockChallengeView.java \
   desktop/strict-dashboard/src/main/resources/com/localfocuscoach/strict/dashboard/dashboard.css \
   desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/StrictModeViewTest.java \
-  desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/UnlockChallengeViewTest.java
+  desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/UnlockChallengeViewTest.java \
+  desktop/strict-dashboard/src/test/java/com/localfocuscoach/strict/dashboard/DashboardVisualRegressionTest.java
 git commit -m "feat(dashboard): replicate Figma strict mode"
 ```
 
