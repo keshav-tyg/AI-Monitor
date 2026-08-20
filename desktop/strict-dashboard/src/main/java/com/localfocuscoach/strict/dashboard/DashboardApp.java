@@ -4,21 +4,31 @@ import java.util.List;
 import java.util.Objects;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
 public final class DashboardApp {
+    private static final double MIN_WIDTH = 840;
+    private static final double MIN_HEIGHT = 620;
+
     private DashboardApp() {}
 
     public static void main(String[] args) {
@@ -36,8 +46,8 @@ public final class DashboardApp {
             dashboardView = new DashboardView(client, primaryStage);
             primaryStage.setTitle("Local Focus Coach");
             primaryStage.setScene(new Scene(dashboardView, 1100, 760));
-            primaryStage.setMinWidth(840);
-            primaryStage.setMinHeight(620);
+            primaryStage.setMinWidth(MIN_WIDTH);
+            primaryStage.setMinHeight(MIN_HEIGHT);
             primaryStage.show();
         }
 
@@ -65,6 +75,10 @@ public final class DashboardApp {
         private boolean disposed;
         private double dragOffsetX;
         private double dragOffsetY;
+        private ResizeDirection activeResize = ResizeDirection.NONE;
+        private WindowBounds resizeStart;
+        private double resizeStartScreenX;
+        private double resizeStartScreenY;
 
         DashboardView(ServiceClient client) {
             this(client, null);
@@ -78,6 +92,7 @@ public final class DashboardApp {
                     DashboardApp.class.getResource("dashboard.css"), "Missing dashboard stylesheet");
             getStylesheets().add(stylesheet.toExternalForm());
             configureTitleBar();
+            configureWindowResize();
             configureNavigation();
             contentShell.setId("dashboardContentShell");
             contentShell.getStyleClass().add("dashboardContentShell");
@@ -140,18 +155,111 @@ public final class DashboardApp {
             return light;
         }
 
+        private void configureWindowResize() {
+            if (stage == null) {
+                return;
+            }
+            addEventFilter(MouseEvent.MOUSE_MOVED, event -> {
+                if (activeResize == ResizeDirection.NONE) {
+                    setCursor(resizeDirectionAt(event.getSceneX(), event.getSceneY()).cursor());
+                }
+            });
+            addEventFilter(MouseEvent.MOUSE_EXITED, event -> {
+                if (activeResize == ResizeDirection.NONE) {
+                    setCursor(Cursor.DEFAULT);
+                }
+            });
+            addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+                if (event.getButton() != MouseButton.PRIMARY) {
+                    return;
+                }
+                activeResize = resizeDirectionAt(event.getSceneX(), event.getSceneY());
+                if (activeResize == ResizeDirection.NONE) {
+                    return;
+                }
+                resizeStart = new WindowBounds(
+                        stage.getX(), stage.getY(), stage.getWidth(), stage.getHeight());
+                resizeStartScreenX = event.getScreenX();
+                resizeStartScreenY = event.getScreenY();
+                event.consume();
+            });
+            addEventFilter(MouseEvent.MOUSE_DRAGGED, event -> {
+                if (activeResize == ResizeDirection.NONE || resizeStart == null) {
+                    return;
+                }
+                var bounds = resizedBounds(
+                        resizeStart,
+                        activeResize,
+                        event.getScreenX() - resizeStartScreenX,
+                        event.getScreenY() - resizeStartScreenY);
+                stage.setX(bounds.x());
+                stage.setY(bounds.y());
+                stage.setWidth(bounds.width());
+                stage.setHeight(bounds.height());
+                event.consume();
+            });
+            addEventFilter(MouseEvent.MOUSE_RELEASED, event -> {
+                if (activeResize != ResizeDirection.NONE) {
+                    activeResize = ResizeDirection.NONE;
+                    resizeStart = null;
+                    setCursor(resizeDirectionAt(event.getSceneX(), event.getSceneY()).cursor());
+                    event.consume();
+                }
+            });
+        }
+
+        private ResizeDirection resizeDirectionAt(double x, double y) {
+            var north = y <= 6;
+            var south = y >= getHeight() - 6;
+            var west = x <= 6;
+            var east = x >= getWidth() - 6;
+            if (north && west) return ResizeDirection.NORTH_WEST;
+            if (north && east) return ResizeDirection.NORTH_EAST;
+            if (south && west) return ResizeDirection.SOUTH_WEST;
+            if (south && east) return ResizeDirection.SOUTH_EAST;
+            if (north) return ResizeDirection.NORTH;
+            if (south) return ResizeDirection.SOUTH;
+            if (west) return ResizeDirection.WEST;
+            if (east) return ResizeDirection.EAST;
+            return ResizeDirection.NONE;
+        }
+
+        private static WindowBounds resizedBounds(
+                WindowBounds start, ResizeDirection direction, double deltaX, double deltaY) {
+            var x = start.x();
+            var y = start.y();
+            var width = start.width();
+            var height = start.height();
+            if (direction.west()) {
+                width = Math.max(MIN_WIDTH, start.width() - deltaX);
+                x = start.x() + start.width() - width;
+            } else if (direction.east()) {
+                width = Math.max(MIN_WIDTH, start.width() + deltaX);
+            }
+            if (direction.north()) {
+                height = Math.max(MIN_HEIGHT, start.height() - deltaY);
+                y = start.y() + start.height() - height;
+            } else if (direction.south()) {
+                height = Math.max(MIN_HEIGHT, start.height() + deltaY);
+            }
+            return new WindowBounds(x, y, width, height);
+        }
+
         private void configureNavigation() {
             focusRulesNavigation.setId("focusRulesNavigation");
             focusRulesNavigation.setOnAction(event -> showFocusRules());
             focusRulesNavigation.setMaxWidth(Double.MAX_VALUE);
+            focusRulesNavigation.setGraphic(DashboardControls.shieldIcon(
+                    "focusRulesNavigation", false, Color.web("#52606f")));
             strictModeNavigation.setId("strictModeNavigation");
             strictModeNavigation.setOnAction(event -> showStrictMode());
             strictModeNavigation.setMaxWidth(Double.MAX_VALUE);
+            strictModeNavigation.setGraphic(DashboardControls.lockIcon(
+                    "strictModeNavigation", Color.web("#52606f")));
 
-            var logo = new Label("⌾");
+            var logo = DashboardControls.shieldIcon("dashboardBrand", true, Color.WHITE);
             logo.setId("dashboardLogo");
             logo.getStyleClass().add("dashboardLogo");
-            logo.setAlignment(Pos.CENTER);
             logo.setMinSize(32, 32);
             logo.setPrefSize(32, 32);
             logo.setMaxSize(32, 32);
@@ -167,13 +275,18 @@ public final class DashboardApp {
 
             var spacer = new Region();
             VBox.setVgrow(spacer, Priority.ALWAYS);
-            var privacyTitle = new Label("●  Local-only privacy");
+            var privacyIndicator = new Circle(3, Color.web("#22c55e"));
+            privacyIndicator.setId("dashboardPrivacyIndicator");
+            var privacyTitle = new Label("Local-only privacy");
+            privacyTitle.setId("dashboardPrivacyTitle");
             privacyTitle.getStyleClass().add("dashboardPrivacyTitle");
             var privacy = new Label("No browsing history or personal data leaves your device.");
             privacy.setId("dashboardPrivacy");
             privacy.setWrapText(true);
             privacy.getStyleClass().add("dashboardPrivacy");
-            var privacyPanel = new VBox(4, privacyTitle, privacy);
+            var privacyHeading = new HBox(8, privacyIndicator, privacyTitle);
+            privacyHeading.setAlignment(Pos.CENTER_LEFT);
+            var privacyPanel = new VBox(4, privacyHeading, privacy);
             privacyPanel.setId("dashboardPrivacyPanel");
             privacyPanel.getStyleClass().add("dashboardPrivacyPanel");
 
@@ -247,8 +360,21 @@ public final class DashboardApp {
         private void setActiveNavigation(Button active) {
             for (var navigation : List.of(focusRulesNavigation, strictModeNavigation)) {
                 navigation.getStyleClass().remove("activeNavigation");
+                recolorVectorIcon(navigation.getGraphic(), Color.web("#52606f"));
             }
             active.getStyleClass().add("activeNavigation");
+            recolorVectorIcon(active.getGraphic(), Color.WHITE);
+        }
+
+        private static void recolorVectorIcon(Node node, Color color) {
+            if (node instanceof SVGPath path) {
+                path.setStroke(color);
+            }
+            if (node instanceof Parent parent) {
+                for (var child : parent.getChildrenUnmodifiable()) {
+                    recolorVectorIcon(child, color);
+                }
+            }
         }
 
         private void disposeCurrentView() {
@@ -263,6 +389,55 @@ public final class DashboardApp {
             if (unlockChallengeView != null) {
                 unlockChallengeView.dispose();
                 unlockChallengeView = null;
+            }
+        }
+
+        private record WindowBounds(double x, double y, double width, double height) {}
+
+        private enum ResizeDirection {
+            NONE(Cursor.DEFAULT, false, false, false, false),
+            NORTH(Cursor.N_RESIZE, true, false, false, false),
+            SOUTH(Cursor.S_RESIZE, false, true, false, false),
+            WEST(Cursor.W_RESIZE, false, false, true, false),
+            EAST(Cursor.E_RESIZE, false, false, false, true),
+            NORTH_WEST(Cursor.NW_RESIZE, true, false, true, false),
+            NORTH_EAST(Cursor.NE_RESIZE, true, false, false, true),
+            SOUTH_WEST(Cursor.SW_RESIZE, false, true, true, false),
+            SOUTH_EAST(Cursor.SE_RESIZE, false, true, false, true);
+
+            private final Cursor cursor;
+            private final boolean north;
+            private final boolean south;
+            private final boolean west;
+            private final boolean east;
+
+            ResizeDirection(
+                    Cursor cursor, boolean north, boolean south, boolean west, boolean east) {
+                this.cursor = cursor;
+                this.north = north;
+                this.south = south;
+                this.west = west;
+                this.east = east;
+            }
+
+            private Cursor cursor() {
+                return cursor;
+            }
+
+            private boolean north() {
+                return north;
+            }
+
+            private boolean south() {
+                return south;
+            }
+
+            private boolean west() {
+                return west;
+            }
+
+            private boolean east() {
+                return east;
             }
         }
     }

@@ -3,6 +3,7 @@ package com.localfocuscoach.strict.dashboard;
 import java.util.Map;
 import java.util.Objects;
 import javafx.geometry.Pos;
+import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -12,7 +13,12 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.SVGPath;
+import javafx.scene.shape.StrokeLineCap;
+import javafx.scene.shape.StrokeLineJoin;
 
 final class DashboardControls {
     private DashboardControls() {}
@@ -78,6 +84,56 @@ final class DashboardControls {
         card.getStyleClass().add("figmaCard");
         card.setMaxWidth(Double.MAX_VALUE);
         return card;
+    }
+
+    static StackPane shieldIcon(String idPrefix, boolean checked, Color color) {
+        Objects.requireNonNull(idPrefix);
+        Objects.requireNonNull(color);
+        var shield = vectorPath(
+                idPrefix + "Shield",
+                "M9 1.5 L15 4 V8.5 C15 12.5 12.6 15.3 9 16.5 "
+                        + "C5.4 15.3 3 12.5 3 8.5 V4 Z",
+                color);
+        var artwork = new Group(shield);
+        if (checked) {
+            artwork.getChildren().add(vectorPath(
+                    idPrefix + "Check", "M5.8 8.9 L8 11 L12.3 6.7", color));
+        }
+        var icon = new StackPane(artwork);
+        configureIcon(icon, idPrefix + "Icon");
+        return icon;
+    }
+
+    static StackPane lockIcon(String idPrefix, Color color) {
+        Objects.requireNonNull(idPrefix);
+        Objects.requireNonNull(color);
+        var body = vectorPath(idPrefix + "LockBody", "M4 8 H14 V16 H4 Z", color);
+        var shackle = vectorPath(
+                idPrefix + "LockShackle", "M6 8 V5.7 C6 2.7 12 2.7 12 5.7 V8", color);
+        var icon = new StackPane(new Group(body, shackle));
+        configureIcon(icon, idPrefix + "Icon");
+        return icon;
+    }
+
+    private static SVGPath vectorPath(String id, String content, Color color) {
+        var path = new SVGPath();
+        path.setId(id);
+        path.getStyleClass().add("figmaVectorPath");
+        path.setContent(content);
+        path.setFill(Color.TRANSPARENT);
+        path.setStroke(color);
+        path.setStrokeWidth(1.5);
+        path.setStrokeLineCap(StrokeLineCap.ROUND);
+        path.setStrokeLineJoin(StrokeLineJoin.ROUND);
+        return path;
+    }
+
+    private static void configureIcon(StackPane icon, String id) {
+        icon.setId(id);
+        icon.getStyleClass().add("figmaVectorIcon");
+        icon.setMinSize(18, 18);
+        icon.setPrefSize(18, 18);
+        icon.setMaxSize(18, 18);
     }
 
     private static Button stepperButton(
