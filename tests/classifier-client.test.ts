@@ -164,24 +164,40 @@ describe('offscreen classifier', () => {
 
   it('treats a downloading model as not ready', async () => {
     const create = vi.fn();
-    installModel({ availability: async () => 'downloading', create });
+    const availability = vi.fn(async () => 'downloading');
+    installModel({ availability, create });
 
     expect(await handleClassify(PAYLOAD)).toEqual({ ok: false, availability: 'downloading' });
     expect(create).not.toHaveBeenCalled();
+    expect(availability).toHaveBeenCalledTimes(2);
+    expect(availability).toHaveBeenNthCalledWith(1, {
+      expectedInputs: [{ type: 'text', languages: ['en'] }],
+      expectedOutputs: [{ type: 'text', languages: ['en'] }],
+    });
+    expect(availability).toHaveBeenNthCalledWith(2, {
+      expectedInputs: [{ type: 'text', languages: ['en'] }],
+      expectedOutputs: [{ type: 'text', languages: ['en'] }],
+    });
   });
 
-  it('declares an output language and a response constraint', async () => {
+  it('declares English input and output languages before checking availability', async () => {
     const prompt = vi.fn(async () =>
       JSON.stringify({ verdict: 'matches', confidence: 0.7, reason: 'deliberate' }),
     );
     const create = vi.fn(async () => ({ prompt }));
-    installModel({ availability: async () => 'available', create });
+    const availability = vi.fn(async () => 'available');
+    installModel({ availability, create });
 
     const response = await handleClassify(PAYLOAD);
 
     expect(response.result).toEqual({ verdict: 'matches', confidence: 0.7, reason: 'deliberate' });
+    expect(availability).toHaveBeenCalledWith({
+      expectedInputs: [{ type: 'text', languages: ['en'] }],
+      expectedOutputs: [{ type: 'text', languages: ['en'] }],
+    });
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
+        expectedInputs: [{ type: 'text', languages: ['en'] }],
         expectedOutputs: [{ type: 'text', languages: ['en'] }],
       }),
     );
