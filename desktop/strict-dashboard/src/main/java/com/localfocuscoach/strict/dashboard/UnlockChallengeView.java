@@ -14,7 +14,10 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 
 public final class UnlockChallengeView extends BorderPane {
@@ -38,7 +41,7 @@ public final class UnlockChallengeView extends BorderPane {
     public UnlockChallengeView(ServiceClient client, Runnable returnToDashboard) {
         this.client = Objects.requireNonNull(client);
         this.returnToDashboard = Objects.requireNonNull(returnToDashboard);
-        setStyle("-fx-background-color: #f7f7f4;");
+        setStyle("-fx-background-color: #f0efe9;");
         getStyleClass().add("unlockChallengeView");
         configureCandidate();
         render();
@@ -126,45 +129,80 @@ public final class UnlockChallengeView extends BorderPane {
         var instructions = new Label(
                 "Type the complete target exactly. You can correct mistakes with Backspace, but clipboard and drag-and-drop input are disabled.");
         instructions.setWrapText(true);
-        var header = new VBox(8, title, instructions);
+        instructions.getStyleClass().add("strictModeDescription");
+        var lockIcon = DashboardControls.lockIcon("unlockHeader", Color.WHITE);
+        var lockTile = new StackPane(lockIcon);
+        lockTile.getStyleClass().add("strictHeaderLockTile");
+        lockTile.setMinSize(32, 32);
+        lockTile.setPrefSize(32, 32);
+        lockTile.setMaxSize(32, 32);
+        var titleRow = new HBox(10, lockTile, title);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+        var header = new VBox(6, titleRow, instructions);
         header.setId("unlockHeader");
 
         targetLabel.setId("challengeTarget");
         targetLabel.setFont(Font.font("Monospaced", 14));
         targetLabel.setWrapText(true);
         targetLabel.setMaxWidth(Double.MAX_VALUE);
-        targetLabel.getStyleClass().add("unlockChallengeTarget");
+        targetLabel.getStyleClass().addAll("unlockChallengeTarget", "figmaSequencePanel");
 
         candidate.setId("challengeCandidate");
-        candidate.setPromptText("Type the full challenge here");
+        candidate.setPromptText("Type the sequence above…");
         candidate.setWrapText(true);
-        candidate.setPrefRowCount(8);
+        candidate.setPrefRowCount(6);
+        candidate.getStyleClass().add("figmaChallengeInput");
 
         submit.setId("submitChallenge");
         submit.setDisable(true);
         submit.setDefaultButton(true);
+        submit.getStyleClass().add("strictPrimaryAction");
+        submit.setMaxWidth(Double.MAX_VALUE);
         submit.setOnAction(event -> submit(candidate.getText()));
 
         retry.setId("retryChallenge");
+        retry.getStyleClass().add("strictSecondaryAction");
         setShown(retry, false);
         retry.setOnAction(event -> beginChallenge());
 
         back.setId("backToDashboard");
+        back.getStyleClass().add("strictSecondaryAction");
         back.setOnAction(event -> returnToDashboard());
 
         feedback.setId("challengeFeedback");
         feedback.setWrapText(true);
-        feedback.setStyle("-fx-text-fill: #8a331f;");
+        feedback.getStyleClass().add("errorState");
 
-        var actions = new HBox(10, submit, retry, back);
-        var card = new VBox(14, targetLabel, candidate, feedback, actions);
+        var challengeTitle = new Label("Unlock sequence");
+        challengeTitle.getStyleClass().add("strictModeCardTitle");
+        var challengeCopy = new Label(
+                "The complete 500-character sequence is shown below. Mistakes won't be "
+                        + "revealed as you type.");
+        challengeCopy.setWrapText(true);
+        challengeCopy.getStyleClass().add("strictCardDescription");
+        var fieldLabel = new Label("TYPE THE SEQUENCE TO END STRICT MODE");
+        fieldLabel.getStyleClass().add("strictSectionLabel");
+        var secondaryActions = new HBox(10, retry, back);
+        HBox.setHgrow(retry, Priority.ALWAYS);
+        HBox.setHgrow(back, Priority.ALWAYS);
+        retry.setMaxWidth(Double.MAX_VALUE);
+        back.setMaxWidth(Double.MAX_VALUE);
+        var card = DashboardControls.card(
+                "unlockChallengeCard",
+                challengeTitle,
+                challengeCopy,
+                targetLabel,
+                fieldLabel,
+                candidate,
+                feedback,
+                submit,
+                secondaryActions);
         card.getStyleClass().add("unlockChallengeCard");
-        card.setPadding(new Insets(20));
-        var content = new VBox(20, header, card);
+        var content = new VBox(16, header, card);
         content.setAlignment(Pos.CENTER_LEFT);
-        content.setMaxWidth(680);
+        content.setMaxWidth(520);
         setCenter(content);
-        BorderPane.setMargin(content, new Insets(32));
+        BorderPane.setMargin(content, new Insets(24, 28, 28, 28));
     }
 
     private void configureCandidate() {

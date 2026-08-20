@@ -620,6 +620,223 @@
     -fx-text-fill: #9a6700;
 }
 
+/* Strict Mode and unlock — native replica of the approved Figma screens. */
+.dashboard .strictModeView,
+.dashboard .unlockChallengeView {
+    -fx-background-color: #f0efe9;
+}
+
+.dashboard .strictModeTitle,
+.dashboard .unlockChallengeTitle {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1c1c1e;
+}
+
+.dashboard .strictHeaderLockTile {
+    -fx-background-color: #111827;
+    -fx-background-radius: 10;
+}
+
+.dashboard .strictModeDescription {
+    -fx-font-size: 13px;
+    -fx-text-fill: #6e6e73;
+    -fx-line-spacing: 2;
+}
+
+.dashboard .strictModeCard {
+    -fx-padding: 20;
+    -fx-spacing: 16;
+}
+
+.dashboard .strictModeCardTitle {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1c1c1e;
+}
+
+.dashboard .strictCardDescription {
+    -fx-font-size: 12px;
+    -fx-text-fill: #6e6e73;
+    -fx-line-spacing: 1.5;
+}
+
+.dashboard .strictSessionOption {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 12;
+    -fx-border-color: #e5e7eb;
+    -fx-border-radius: 12;
+    -fx-border-width: 1;
+    -fx-padding: 14;
+    -fx-cursor: hand;
+}
+
+.dashboard .strictSessionOption:hover {
+    -fx-border-color: #d1d5db;
+}
+
+.dashboard .strictSessionOption.selectedSessionOption {
+    -fx-background-color: #ecfdf3;
+    -fx-border-color: #22c55e;
+}
+
+.dashboard .strictSessionChoice {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #374151;
+}
+
+.dashboard .strictSessionChoice > .radio {
+    -fx-opacity: 0;
+    -fx-padding: 0;
+}
+
+.dashboard .selectedSessionOption .strictSessionChoice {
+    -fx-text-fill: #166534;
+}
+
+.dashboard .strictSessionOptionDetail {
+    -fx-font-size: 11px;
+    -fx-text-fill: #9ca3af;
+}
+
+.dashboard .selectedSessionOption .strictSessionOptionDetail {
+    -fx-text-fill: #16a34a;
+}
+
+.dashboard .strictModeDivider {
+    -fx-background-color: #f3f4f6;
+}
+
+.dashboard .strictSectionLabel {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #9ca3af;
+}
+
+.dashboard .strictDurationStepper {
+    -fx-alignment: center-left;
+}
+
+.dashboard .unlockPreparationCard {
+    -fx-padding: 20;
+    -fx-spacing: 12;
+}
+
+.dashboard .figmaSequencePanel {
+    -fx-background-color: #f9fafb;
+    -fx-background-radius: 12;
+    -fx-border-color: #e5e7eb;
+    -fx-border-radius: 12;
+    -fx-padding: 14 16 14 16;
+    -fx-font-family: "SF Mono", "Menlo", "Monospaced";
+    -fx-font-size: 13px;
+    -fx-text-fill: #374151;
+    -fx-alignment: center;
+}
+
+.dashboard .figmaSafetyCard {
+    -fx-background-color: #fffbeb;
+    -fx-background-radius: 16;
+    -fx-border-color: #fde68a;
+    -fx-border-radius: 16;
+    -fx-padding: 16;
+}
+
+.dashboard .strictSafetyIcon {
+    -fx-min-width: 16;
+    -fx-pref-width: 16;
+    -fx-max-width: 16;
+    -fx-min-height: 16;
+    -fx-pref-height: 16;
+    -fx-max-height: 16;
+    -fx-alignment: center;
+    -fx-background-color: #f59e0b;
+    -fx-background-radius: 999;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
+}
+
+.dashboard .strictSafetyTitle {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #92400e;
+}
+
+.dashboard .strictSafetyCopy {
+    -fx-font-size: 12px;
+    -fx-text-fill: #b45309;
+    -fx-line-spacing: 1.5;
+}
+
+.dashboard .strictPrimaryAction {
+    -fx-background-color: #111827;
+    -fx-background-radius: 12;
+    -fx-border-color: transparent;
+    -fx-border-radius: 12;
+    -fx-padding: 10 16 10 16;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
+}
+
+.dashboard .strictPrimaryAction:hover,
+.dashboard .strictPrimaryAction:focused {
+    -fx-background-color: #1f2937;
+}
+
+.dashboard .strictPrimaryAction:disabled {
+    -fx-opacity: 0.4;
+    -fx-text-fill: #ffffff;
+}
+
+.dashboard .strictSecondaryAction {
+    -fx-background-color: #f3f4f6;
+    -fx-background-radius: 12;
+    -fx-border-color: transparent;
+    -fx-border-radius: 12;
+    -fx-padding: 9 14 9 14;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #4b5563;
+}
+
+.dashboard .activeSessionCountdown {
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #2f6b4a;
+}
+
+.dashboard .strictModeWarningCard {
+    -fx-background-color: #fffbeb;
+    -fx-background-radius: 16;
+    -fx-border-color: #fde68a;
+    -fx-border-radius: 16;
+    -fx-padding: 16;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.04), 4, 0, 0, 1);
+}
+
+.dashboard .unlockChallengeCard {
+    -fx-padding: 20;
+    -fx-spacing: 12;
+}
+
+.dashboard .figmaChallengeInput {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 12;
+    -fx-border-color: #e5e7eb;
+    -fx-border-radius: 12;
+    -fx-padding: 10 12 10 12;
+    -fx-font-family: "SF Mono", "Menlo", "Monospaced";
+    -fx-font-size: 13px;
+    -fx-text-fill: #1c1c1e;
+}
+
+.dashboard .figmaChallengeInput:focused {
+    -fx-border-color: #4ade80;
+}
+
 .dashboard .focusRulesStatusGlyph.errorState {
     -fx-background-color: #fee2e2;
     -fx-text-fill: #a23a25;

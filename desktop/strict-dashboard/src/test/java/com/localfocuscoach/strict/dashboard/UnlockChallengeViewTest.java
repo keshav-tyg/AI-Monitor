@@ -85,16 +85,44 @@ class UnlockChallengeViewTest {
 
         FxTestSupport.call(() -> {
             assertNotNull(view.lookup("#unlockHeader"));
+            assertNotNull(view.lookup("#unlockChallengeCard"));
             assertEquals(1, view.lookupAll(".unlockChallengeCard").size());
             view.onPaste();
             assertEquals("", view.currentCandidate());
             var target = (Label) view.lookup("#challengeTarget");
             assertTrue(target.isWrapText());
             assertEquals("Monospaced", target.getFont().getFamily());
+            assertTrue(target.getStyleClass().contains("figmaSequencePanel"));
             assertEquals(TARGET, target.getText());
             return null;
         });
         assertEquals(List.of("dashboard.beginUnlock"), requestTypes(requests));
+    }
+
+    @Test
+    void displaysTheFullFiveHundredCharacterChallengeInsideTheSequencePanel() {
+        var target = "a".repeat(500);
+        var view = FxTestSupport.call(() -> new UnlockChallengeView(
+                new ServiceClient(
+                        SECRET,
+                        request -> response(
+                                "service.challenge",
+                                Map.of(
+                                        "challengeId", "challenge-id",
+                                        "target", target,
+                                        "createdAt", "2026-08-18T12:00:00Z"))),
+                () -> {}));
+        FxTestSupport.waitFor(
+                () -> target.equals(((Label) view.lookup("#challengeTarget")).getText()),
+                "full-length challenge target");
+
+        FxTestSupport.call(() -> {
+            var rendered = (Label) view.lookup("#challengeTarget");
+            assertEquals(500, rendered.getText().length());
+            assertEquals(target, rendered.getText());
+            assertTrue(rendered.getStyleClass().contains("figmaSequencePanel"));
+            return null;
+        });
     }
 
     @Test

@@ -8,7 +8,9 @@ import com.localfocuscoach.strict.protocol.ProtocolMessage;
 import java.util.List;
 import java.util.Map;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.image.WritableImage;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
@@ -77,6 +79,68 @@ class DashboardVisualRegressionTest {
                 assertTrue(status.isVisible());
                 assertNotNull(status.getScene());
                 assertTrue(status.localToScene(status.getBoundsInLocal()).getMinY() > 700.0);
+                return null;
+            });
+        } finally {
+            FxTestSupport.call(() -> {
+                dashboard.dispose();
+                return null;
+            });
+            client.close();
+        }
+    }
+
+    @Test
+    void strictModeMatchesTheReferenceSelectionPreparationAndSafetyGeometry() {
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.status".equals(request.type())) {
+                return new ProtocolMessage(
+                        1, SECRET, "service.status", Map.of("active", false));
+            }
+            return focusSettingsResponse();
+        });
+        var dashboard = FxTestSupport.call(() -> {
+            var created = new DashboardApp.DashboardView(client);
+            new Scene(created, 1100, 760);
+            created.applyCss();
+            created.layout();
+            ((Button) created.lookup("#strictModeNavigation")).fire();
+            return created;
+        });
+        try {
+            FxTestSupport.waitFor(
+                    () -> dashboard.lookup("#strictSafetyCard") != null,
+                    "Figma Strict Mode hierarchy");
+            FxTestSupport.call(() -> {
+                dashboard.applyCss();
+                dashboard.layout();
+                var session = (Region) dashboard.lookup("#sessionTypeCard");
+                var options = (HBox) dashboard.lookup("#sessionTypeOptions");
+                var timed = (Region) dashboard.lookup("#timedSessionOption");
+                var indefinite = (Region) dashboard.lookup("#indefiniteSessionOption");
+                var preparation = (Region) dashboard.lookup("#unlockPreparationCard");
+                var safety = (Region) dashboard.lookup("#strictSafetyCard");
+                var start = (Button) dashboard.lookup("#startSession");
+
+                assertNotNull(session);
+                assertEquals(2, options.getChildren().size());
+                assertTrue(timed.getStyleClass().contains("selectedSessionOption"));
+                assertEquals(timed.getWidth(), indefinite.getWidth(), 1.0);
+                assertTrue(preparation.getWidth() >= session.getWidth() - 2.0);
+                assertTrue(safety.getStyleClass().contains("figmaSafetyCard"));
+                assertTrue(start.getWidth() >= safety.getWidth() - 2.0);
+                assertColorNear(
+                        Color.web("#ecfdf3"),
+                        (Color) timed.getBackground().getFills().getFirst().getFill());
+                assertColorNear(
+                        Color.web("#fffbeb"),
+                        (Color) safety.getBackground().getFills().getFirst().getFill());
+                assertColorNear(
+                        Color.web("#111827"),
+                        (Color) start.getBackground().getFills().getFirst().getFill());
+                var snapshot = dashboard.getScene().snapshot(null);
+                assertEquals(1100.0, snapshot.getWidth(), 0.1);
+                assertEquals(760.0, snapshot.getHeight(), 0.1);
                 return null;
             });
         } finally {
