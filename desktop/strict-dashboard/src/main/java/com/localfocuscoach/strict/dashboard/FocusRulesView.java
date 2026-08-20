@@ -17,7 +17,9 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -161,8 +163,18 @@ public final class FocusRulesView extends BorderPane {
         var enabled = new CheckBox("Enable this rule");
         enabled.setId(metadata.prefix() + "Enabled");
         var budget = numberField(metadata.prefix() + "Budget", "1–60");
-        var warningScore = numberField(metadata.prefix() + "WarningScore", "1–50");
         var gracePeriod = numberField(metadata.prefix() + "GracePeriod", "0–600");
+        var sensitivityGroup = new ToggleGroup();
+        var sensitivityButtons = new EnumMap<FocusSensitivity, RadioButton>(FocusSensitivity.class);
+        var sensitivityList = new VBox(7, new Label("Focus sensitivity"));
+        for (var sensitivity : FocusSensitivity.values()) {
+            var button = new RadioButton(sensitivityLabel(sensitivity));
+            button.setId(metadata.prefix() + "Sensitivity" + sensitivitySuffix(sensitivity));
+            button.setToggleGroup(sensitivityGroup);
+            button.setUserData(sensitivity);
+            sensitivityButtons.put(sensitivity, button);
+            sensitivityList.getChildren().add(button);
+        }
 
         var interventions = new EnumMap<FocusIntervention, CheckBox>(FocusIntervention.class);
         var interventionList = new VBox(7);
@@ -183,7 +195,7 @@ public final class FocusRulesView extends BorderPane {
                 title,
                 enabled,
                 labelled("Doomscroll session budget (minutes)", budget),
-                labelled("Warning score", warningScore),
+                sensitivityList,
                 labelled("Grace period (seconds)", gracePeriod),
                 interventionList,
                 blockDuration);
@@ -192,7 +204,8 @@ public final class FocusRulesView extends BorderPane {
         card.setPadding(new Insets(18));
         card.setStyle(
                 "-fx-background-color: white; -fx-border-color: #d8d8d2; -fx-border-radius: 10; -fx-background-radius: 10;");
-        return new RuleControls(card, enabled, budget, warningScore, gracePeriod, interventions);
+        return new RuleControls(
+                card, enabled, budget, gracePeriod, interventions, sensitivityGroup, sensitivityButtons);
     }
 
     private void renderSnapshot(Map<String, Object> payload) {
@@ -220,7 +233,7 @@ public final class FocusRulesView extends BorderPane {
             var controls = rules.get(site);
             controls.enabled().setSelected(rule.enabled());
             controls.budget().setText(Integer.toString(rule.doomscrollBudgetMinutes()));
-            controls.warningScore().setText(Integer.toString(rule.warningScore()));
+            controls.renderSensitivity(rule.warningScore());
             controls.gracePeriod().setText(Integer.toString(rule.gracePeriodSeconds()));
             for (var intervention : FocusIntervention.values()) {
                 controls.interventions()
@@ -262,11 +275,6 @@ public final class FocusRulesView extends BorderPane {
                 feedback.setText("Doomscroll session budget must be 1 to 60 minutes");
                 return;
             }
-            var warningScore = integer(controls.warningScore(), 1, 50);
-            if (warningScore == null) {
-                feedback.setText("Warning score must be 1 to 50");
-                return;
-            }
             var gracePeriod = integer(controls.gracePeriod(), 0, 600);
             if (gracePeriod == null) {
                 feedback.setText("Grace period must be 0 to 600 seconds");
@@ -287,7 +295,7 @@ public final class FocusRulesView extends BorderPane {
                     new FocusRule(
                             controls.enabled().isSelected(),
                             budget,
-                            warningScore,
+                            controls.warningScoreForSave(),
                             gracePeriod,
                             interventions));
         }
@@ -346,8 +354,10 @@ public final class FocusRulesView extends BorderPane {
                     (observable, previous, current) -> draftGeneration++);
             controls.budget().textProperty().addListener(
                     (observable, previous, current) -> draftGeneration++);
-            controls.warningScore().textProperty().addListener(
-                    (observable, previous, current) -> draftGeneration++);
+            for (var sensitivity : controls.sensitivityButtons().values()) {
+                sensitivity.selectedProperty().addListener(
+                        (observable, previous, current) -> draftGeneration++);
+            }
             controls.gracePeriod().textProperty().addListener(
                     (observable, previous, current) -> draftGeneration++);
             for (var intervention : controls.interventions().values()) {
@@ -363,7 +373,9 @@ public final class FocusRulesView extends BorderPane {
         for (var controls : rules.values()) {
             controls.enabled().setDisable(disabled);
             controls.budget().setDisable(disabled);
-            controls.warningScore().setDisable(disabled);
+            for (var sensitivity : controls.sensitivityButtons().values()) {
+                sensitivity.setDisable(disabled);
+            }
             controls.gracePeriod().setDisable(disabled);
             for (var intervention : controls.interventions().values()) {
                 intervention.setDisable(disabled);
@@ -406,6 +418,22 @@ public final class FocusRulesView extends BorderPane {
         };
     }
 
+    private static String sensitivityLabel(FocusSensitivity sensitivity) {
+        return switch (sensitivity) {
+            case MILD -> "Mild — Intervene after more sustained passive scrolling.";
+            case MEDIUM -> "Medium — A balanced reminder.";
+            case AGGRESSIVE -> "Aggressive — Intervene quickly after passive scrolling begins.";
+        };
+    }
+
+    private static String sensitivitySuffix(FocusSensitivity sensitivity) {
+        return switch (sensitivity) {
+            case MILD -> "Mild";
+            case MEDIUM -> "Medium";
+            case AGGRESSIVE -> "Aggressive";
+        };
+    }
+
     private static String interventionSuffix(FocusIntervention intervention) {
         return switch (intervention) {
             case NOTIFY -> "Notify";
@@ -437,13 +465,82 @@ public final class FocusRulesView extends BorderPane {
         return ((Number) value).longValue();
     }
 
-    private record RuleControls(
-            VBox card,
-            CheckBox enabled,
-            TextField budget,
-            TextField warningScore,
-            TextField gracePeriod,
-            EnumMap<FocusIntervention, CheckBox> interventions) {}
+    private static final class RuleControls {
+        private final VBox card;
+        private final CheckBox enabled;
+        private final TextField budget;
+        private final TextField gracePeriod;
+        private final EnumMap<FocusIntervention, CheckBox> interventions;
+        private final ToggleGroup sensitivityGroup;
+        private final EnumMap<FocusSensitivity, RadioButton> sensitivityButtons;
+        private int loadedWarningScore;
+        private boolean sensitivityChanged;
+
+        private RuleControls(
+                VBox card,
+                CheckBox enabled,
+                TextField budget,
+                TextField gracePeriod,
+                EnumMap<FocusIntervention, CheckBox> interventions,
+                ToggleGroup sensitivityGroup,
+                EnumMap<FocusSensitivity, RadioButton> sensitivityButtons) {
+            this.card = card;
+            this.enabled = enabled;
+            this.budget = budget;
+            this.gracePeriod = gracePeriod;
+            this.interventions = interventions;
+            this.sensitivityGroup = sensitivityGroup;
+            this.sensitivityButtons = sensitivityButtons;
+            renderSensitivity(FocusSensitivity.MILD.warningScore());
+            for (var button : sensitivityButtons.values()) {
+                button.setOnAction(event -> sensitivityChanged = true);
+            }
+        }
+
+        private VBox card() {
+            return card;
+        }
+
+        private CheckBox enabled() {
+            return enabled;
+        }
+
+        private TextField budget() {
+            return budget;
+        }
+
+        private TextField gracePeriod() {
+            return gracePeriod;
+        }
+
+        private EnumMap<FocusIntervention, CheckBox> interventions() {
+            return interventions;
+        }
+
+        private EnumMap<FocusSensitivity, RadioButton> sensitivityButtons() {
+            return sensitivityButtons;
+        }
+
+        private void renderSensitivity(int warningScore) {
+            sensitivityButtons.get(FocusSensitivity.forStoredScore(warningScore)).setSelected(true);
+            loadedWarningScore = warningScore;
+            sensitivityChanged = false;
+        }
+
+        private int warningScoreForSave() {
+            return sensitivityChanged
+                    ? selectedSensitivity().warningScore()
+                    : loadedWarningScore;
+        }
+
+        private FocusSensitivity selectedSensitivity() {
+            var selected = sensitivityGroup.getSelectedToggle();
+            if (selected == null) {
+                throw new IllegalStateException("Focus sensitivity must be selected");
+            }
+            return (FocusSensitivity) selected.getUserData();
+        }
+    }
 
     private record FocusSettingsSnapshot(FocusSettings settings, long chromeRevision) {}
 
