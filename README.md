@@ -132,8 +132,8 @@ count. It returns a schema-checked verdict, confidence, and short reason.
 Under the hood, the score ladder provides the configured notice/pause/close
 and block interventions for sustained passive use. Its transparent signals are:
 
-- **content advance** (+2) — the media source changed, or the timeline moved a
-  full viewport
+- **content advance** (+2) — the normalized YouTube `/shorts/<id>` route changed,
+  the Instagram media source changed, or the X timeline moved a full viewport
 - **scroll** (+1) — throttled to at most one event every 750 ms
 
 Two rules keep it honest:
@@ -251,14 +251,20 @@ Known and accepted, not bugs:
   flag, and a small on-device model can misjudge. It can only *prevent*
   enforcement under a doomscroll declaration; it can end a *purposeful* session
   only at 0.8 confidence, and never touches a direct-link item.
-- **Detection is selector-based.** A site redesign can silently stop it.
+- **Detection uses conservative site signals.** YouTube Shorts advances use the
+  normalized `/shorts/<id>` route identifier as their authoritative signal.
+  Instagram media-source changes, X timeline movement, and recognized click
+  targets still depend on current page behavior and markup, so a redesign can
+  silently stop those signals.
 - **Three feeds only**, macOS Chrome only, one profile, no sync.
 
 ## When it stops working
 
-Instagram, X, and YouTube change their markup regularly. When they do,
-detection may simply stop firing — the media-source probe finds no `video`
-element, or a click no longer matches a known pattern.
+Instagram, X, and YouTube change their markup and routing regularly. When they
+do, detection may simply stop firing — Instagram's media-source probe may find
+no `video`, an X or purposeful-click signal may no longer match, or YouTube may
+stop exposing a valid `/shorts/<id>` route. A missing Shorts route identifier
+is ignored; selector or media-source changes are not used as a fallback guess.
 
 **This fails open by design.** A missing selector, an unrecognised route, a
 disabled rule, or an unreadable setting all produce *no* enforcement. The

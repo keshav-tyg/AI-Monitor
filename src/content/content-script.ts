@@ -14,7 +14,9 @@ let activeYouTubeShortId: string | undefined;
 
 function currentSite(href: string): SiteId | undefined {
   try {
-    return detectSite(new URL(href));
+    const site = detectSite(new URL(href));
+    if (site === 'youtube-shorts' && youtubeShortId(href) === undefined) return undefined;
+    return site;
   } catch {
     // An unparseable location is not a supported view.
     return undefined;
