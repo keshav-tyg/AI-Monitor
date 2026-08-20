@@ -30,6 +30,11 @@ class DashboardAppTest {
         try {
             FxTestSupport.call(() -> {
                 assertEquals(Color.web("#1f2937"), ((Label) dashboard.lookup(".label")).getTextFill());
+                var privacy = (Label) dashboard.lookup("#dashboardPrivacy");
+                assertEquals(
+                        "Your browsing history and personal data never leave this device.",
+                        privacy.getText());
+                assertEquals(Color.web("#6b7280"), privacy.getTextFill());
                 return null;
             });
         } finally {

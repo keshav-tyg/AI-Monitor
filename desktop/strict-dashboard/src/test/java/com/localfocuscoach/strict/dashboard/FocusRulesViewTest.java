@@ -2,6 +2,7 @@ package com.localfocuscoach.strict.dashboard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -22,8 +24,14 @@ import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.Labeled;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
+import javafx.scene.effect.DropShadow;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.StackPane;
+import javafx.scene.paint.Color;
+import javafx.scene.Scene;
 import javafx.util.Duration;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +54,16 @@ class FocusRulesViewTest {
                 assertNotNull(view.lookup("#focusSaveStatus"));
                 assertNull(view.lookup("#saveFocusRules"));
                 assertEquals(3, view.lookupAll(".focusSiteRule").size());
+                assertEquals(
+                        "Strict Mode prevents settings from being weakened while a locked session is active.",
+                        ((Label) view.lookup("#focusRulesStrictModeDescription")).getText());
+                assertEquals(
+                        "instagram.com/reels",
+                        ((Label) view.lookup("#instagramReelsRoute")).getText());
+                assertEquals("x.com/home", ((Label) view.lookup("#xTimelineRoute")).getText());
+                assertEquals(
+                        "youtube.com/shorts",
+                        ((Label) view.lookup("#youtubeShortsRoute")).getText());
                 assertEquals("5", ((TextField) view.lookup("#instagramReelsBudget")).getText());
                 assertTrue(((RadioButton) view.lookup("#xTimelineSensitivityMild")).isSelected());
                 assertEquals("60", ((TextField) view.lookup("#youtubeShortsGracePeriod")).getText());
@@ -55,6 +73,38 @@ class FocusRulesViewTest {
                 assertEquals(
                         true,
                         ((CheckBox) view.lookup("#youtubeShortsCloseTab")).isSelected());
+                return null;
+            });
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void ruleCardsUseTwoEqualColumnsOnDesktopAndOneColumnWhenNarrow() {
+        var client = client(new CopyOnWriteArrayList<>());
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+
+            FxTestSupport.call(() -> {
+                var cards = assertInstanceOf(GridPane.class, view.lookup("#focusRulesCards"));
+                cards.resize(900, 800);
+                assertEquals(2, cards.getColumnConstraints().size());
+                assertEquals(50.0, cards.getColumnConstraints().get(0).getPercentWidth());
+                assertEquals(50.0, cards.getColumnConstraints().get(1).getPercentWidth());
+                assertEquals(0, GridPane.getColumnIndex(view.lookup("#instagramReelsRule")));
+                assertEquals(1, GridPane.getColumnIndex(view.lookup("#xTimelineRule")));
+                assertEquals(0, GridPane.getColumnIndex(view.lookup("#youtubeShortsRule")));
+                assertEquals(1, GridPane.getRowIndex(view.lookup("#youtubeShortsRule")));
+
+                cards.resize(700, 800);
+                assertEquals(1, cards.getColumnConstraints().size());
+                assertEquals(100.0, cards.getColumnConstraints().getFirst().getPercentWidth());
+                assertEquals(0, GridPane.getColumnIndex(view.lookup("#instagramReelsRule")));
+                assertEquals(0, GridPane.getColumnIndex(view.lookup("#xTimelineRule")));
+                assertEquals(0, GridPane.getColumnIndex(view.lookup("#youtubeShortsRule")));
+                assertEquals(2, GridPane.getRowIndex(view.lookup("#youtubeShortsRule")));
                 return null;
             });
         } finally {
@@ -173,6 +223,99 @@ class FocusRulesViewTest {
                     instagram.get("interventions"));
             assertEquals("Waiting for Chrome", text(view, "#chromeSyncStatus"));
         } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void invalidEditAfterSuccessfulSaveClearsSuccessAndShowsOnlyValidation() {
+        var requests = new CopyOnWriteArrayList<ProtocolMessage>();
+        var client = new ServiceClient(SECRET, request -> {
+            requests.add(request);
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                @SuppressWarnings("unchecked")
+                var settings = (Map<String, Object>) request.payload().get("settings");
+                return focusSettingsResponse(4L, 4L, settings);
+            }
+            return focusSettingsResponse(3L, 3L);
+        });
+        var view = autoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            requests.clear();
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "4");
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> "Saved".equals(text(view, "#focusSaveStatus")),
+                    "successful Focus Rules save");
+
+            FxTestSupport.call(() -> {
+                setText(view, "#instagramReelsBudget", "61");
+                assertEquals("", textOnFxThread(view, "#focusSaveStatus"));
+                return null;
+            });
+            FxTestSupport.waitFor(
+                    () -> "Doomscroll session budget must be 1 to 60 minutes"
+                            .equals(text(view, "#focusSettingsFeedback")),
+                    "validation after a successful save");
+
+            FxTestSupport.call(() -> {
+                assertEquals("", textOnFxThread(view, "#focusSaveStatus"));
+                assertFalse(view.lookup("#focusSaveStatus")
+                        .getStyleClass()
+                        .contains("successState"));
+                assertTrue(view.lookup("#focusSettingsFeedback")
+                        .getStyleClass()
+                        .contains("errorState"));
+                return null;
+            });
+            assertEquals(1, requests.size());
+        } finally {
+            dispose(view, client);
+        }
+    }
+
+    @Test
+    void saveSyncAndProtectionStatesRenderWithTheirSemanticColors() throws Exception {
+        var saveStarted = new CountDownLatch(1);
+        var releaseSave = new CountDownLatch(1);
+        var client = new ServiceClient(SECRET, request -> {
+            if ("dashboard.focusSettings.save".equals(request.type())) {
+                saveStarted.countDown();
+                await(releaseSave);
+                @SuppressWarnings("unchecked")
+                var settings = (Map<String, Object>) request.payload().get("settings");
+                return focusSettingsResponse(4L, 4L, settings);
+            }
+            return focusSettingsResponse(3L, 2L);
+        });
+        var view = styledAutoSavingView(client);
+        try {
+            waitUntilLoaded(view);
+            assertSemanticColor(view, "#chromeSyncStatus", "pendingState", "#9a6700");
+            assertSemanticColor(view, "#focusProtectionEnabled", "protectionControl", "#2f6d45");
+            FxTestSupport.call(() -> {
+                var shadow = assertInstanceOf(
+                        DropShadow.class, view.lookup("#instagramReelsRule").getEffect());
+                assertTrue(shadow.getColor().getOpacity() <= 0.15);
+                setText(view, "#instagramReelsBudget", "4");
+                return null;
+            });
+            assertTrue(saveStarted.await(1, TimeUnit.SECONDS));
+            FxTestSupport.waitFor(
+                    () -> "Saving changes…".equals(text(view, "#focusSaveStatus")),
+                    "saving state");
+            assertSemanticColor(view, "#focusSaveStatus", "pendingState", "#9a6700");
+
+            releaseSave.countDown();
+            FxTestSupport.waitFor(
+                    () -> "Saved".equals(text(view, "#focusSaveStatus")), "saved state");
+            assertSemanticColor(view, "#focusSaveStatus", "successState", "#2f6d45");
+            assertSemanticColor(view, "#chromeSyncStatus", "successState", "#2f6d45");
+        } finally {
+            releaseSave.countDown();
             dispose(view, client);
         }
     }
@@ -657,6 +800,32 @@ class FocusRulesViewTest {
     private static FocusRulesView autoSavingView(ServiceClient client) {
         return FxTestSupport.call(
                 () -> new FocusRulesView(client, () -> {}, Duration.seconds(1), Duration.millis(10)));
+    }
+
+    private static FocusRulesView styledAutoSavingView(ServiceClient client) {
+        return FxTestSupport.call(() -> {
+            var view = new FocusRulesView(
+                    client, () -> {}, Duration.hours(1), Duration.millis(10));
+            var root = new StackPane(view);
+            root.getStyleClass().add("dashboard");
+            root.getStylesheets().add(Objects.requireNonNull(
+                            DashboardApp.class.getResource("dashboard.css"))
+                    .toExternalForm());
+            new Scene(root, 1000, 800);
+            root.applyCss();
+            return view;
+        });
+    }
+
+    private static void assertSemanticColor(
+            FocusRulesView view, String selector, String styleClass, String expectedColor) {
+        FxTestSupport.call(() -> {
+            view.getScene().getRoot().applyCss();
+            var node = view.lookup(selector);
+            assertTrue(node.getStyleClass().contains(styleClass));
+            assertEquals(Color.web(expectedColor), ((Labeled) node).getTextFill());
+            return null;
+        });
     }
 
     private static void waitForFxDelay(Duration duration) throws Exception {

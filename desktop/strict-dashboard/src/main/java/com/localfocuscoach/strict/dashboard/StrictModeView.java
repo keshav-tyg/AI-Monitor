@@ -130,11 +130,11 @@ public final class StrictModeView extends BorderPane {
         var serviceFeedback = new Label(initialFeedback);
         serviceFeedback.setId("serviceFeedback");
         serviceFeedback.setWrapText(true);
-        serviceFeedback.setStyle("-fx-text-fill: #8a331f;");
+        serviceFeedback.getStyleClass().add("errorState");
         var feedback = new Label();
         feedback.setId("startFeedback");
         feedback.setWrapText(true);
-        feedback.setStyle("-fx-text-fill: #8a331f;");
+        feedback.getStyleClass().add("errorState");
 
         var start = new Button("Start session");
         start.setId("startSession");
@@ -247,7 +247,7 @@ public final class StrictModeView extends BorderPane {
 
         var warningCountdown = new Label(isWarning ? remainingText(warningEndsAt) : "");
         warningCountdown.setId("warningCountdown");
-        warningCountdown.setStyle("-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #a23a25;");
+        warningCountdown.getStyleClass().addAll("strictModeWarningCountdown", "pendingState");
         setShown(warningCountdown, isWarning);
 
         var unlock = new Button("Begin unlock challenge");

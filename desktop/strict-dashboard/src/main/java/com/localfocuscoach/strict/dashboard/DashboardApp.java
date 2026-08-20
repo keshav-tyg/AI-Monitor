@@ -93,7 +93,8 @@ public final class DashboardApp {
 
             var spacer = new Region();
             VBox.setVgrow(spacer, Priority.ALWAYS);
-            var privacy = new Label("Your focus data stays on this device.");
+            var privacy = new Label(
+                    "Your browsing history and personal data never leave this device.");
             privacy.setId("dashboardPrivacy");
             privacy.setWrapText(true);
             privacy.getStyleClass().add("dashboardPrivacy");
