@@ -10,10 +10,13 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 public final class DashboardApp {
     private DashboardApp() {}
@@ -29,11 +32,12 @@ public final class DashboardApp {
         @Override
         public void start(Stage primaryStage) {
             client = new ServiceClient();
-            dashboardView = new DashboardView(client);
+            primaryStage.initStyle(StageStyle.UNDECORATED);
+            dashboardView = new DashboardView(client, primaryStage);
             primaryStage.setTitle("Local Focus Coach");
-            primaryStage.setScene(new Scene(dashboardView, 760, 580));
-            primaryStage.setMinWidth(620);
-            primaryStage.setMinHeight(500);
+            primaryStage.setScene(new Scene(dashboardView, 1100, 760));
+            primaryStage.setMinWidth(840);
+            primaryStage.setMinHeight(620);
             primaryStage.show();
         }
 
@@ -52,18 +56,37 @@ public final class DashboardApp {
         private final ServiceClient client;
         private final Button focusRulesNavigation = new Button("Focus Rules");
         private final Button strictModeNavigation = new Button("Strict Mode");
+        private final BorderPane contentShell = new BorderPane();
+        private final StackPane pinnedFooter = new StackPane();
         private FocusRulesView focusRulesView;
         private StrictModeView strictModeView;
         private UnlockChallengeView unlockChallengeView;
+        private final Stage stage;
         private boolean disposed;
+        private double dragOffsetX;
+        private double dragOffsetY;
 
         DashboardView(ServiceClient client) {
+            this(client, null);
+        }
+
+        DashboardView(ServiceClient client, Stage stage) {
             this.client = Objects.requireNonNull(client);
+            this.stage = stage;
             getStyleClass().add("dashboard");
             var stylesheet = Objects.requireNonNull(
                     DashboardApp.class.getResource("dashboard.css"), "Missing dashboard stylesheet");
             getStylesheets().add(stylesheet.toExternalForm());
+            configureTitleBar();
             configureNavigation();
+            contentShell.setId("dashboardContentShell");
+            contentShell.getStyleClass().add("dashboardContentShell");
+            pinnedFooter.setId("dashboardPinnedFooter");
+            pinnedFooter.getStyleClass().add("dashboardPinnedFooter");
+            pinnedFooter.setManaged(false);
+            pinnedFooter.setVisible(false);
+            contentShell.setBottom(pinnedFooter);
+            setCenter(contentShell);
             showFocusRules();
         }
 
@@ -75,6 +98,48 @@ public final class DashboardApp {
             disposeCurrentView();
         }
 
+        private void configureTitleBar() {
+            var red = trafficLight("macosClose", "macosTrafficRed");
+            var yellow = trafficLight("macosMinimize", "macosTrafficYellow");
+            var green = trafficLight("macosZoom", "macosTrafficGreen");
+            var trafficLights = new HBox(8, red, yellow, green);
+            trafficLights.setId("macosTrafficLights");
+            trafficLights.setAlignment(Pos.CENTER_LEFT);
+
+            var title = new Label("Local Focus Coach");
+            title.setId("macosWindowTitle");
+            title.getStyleClass().add("macosWindowTitle");
+
+            var titleBar = new StackPane(title, trafficLights);
+            titleBar.setId("macosTitleBar");
+            titleBar.getStyleClass().add("macosTitleBar");
+            titleBar.setMinHeight(40);
+            titleBar.setPrefHeight(40);
+            titleBar.setMaxHeight(40);
+            StackPane.setAlignment(trafficLights, Pos.CENTER_LEFT);
+            titleBar.setOnMousePressed(event -> {
+                dragOffsetX = event.getSceneX();
+                dragOffsetY = event.getSceneY();
+            });
+            titleBar.setOnMouseDragged(event -> {
+                if (stage != null) {
+                    stage.setX(event.getScreenX() - dragOffsetX);
+                    stage.setY(event.getScreenY() - dragOffsetY);
+                }
+            });
+            setTop(titleBar);
+        }
+
+        private static Region trafficLight(String id, String styleClass) {
+            var light = new Region();
+            light.setId(id);
+            light.getStyleClass().addAll("macosTrafficLight", styleClass);
+            light.setMinSize(12, 12);
+            light.setPrefSize(12, 12);
+            light.setMaxSize(12, 12);
+            return light;
+        }
+
         private void configureNavigation() {
             focusRulesNavigation.setId("focusRulesNavigation");
             focusRulesNavigation.setOnAction(event -> showFocusRules());
@@ -83,29 +148,45 @@ public final class DashboardApp {
             strictModeNavigation.setOnAction(event -> showStrictMode());
             strictModeNavigation.setMaxWidth(Double.MAX_VALUE);
 
-            var brandTitle = new Label("LOCAL FOCUS");
+            var logo = new Label("⌾");
+            logo.setId("dashboardLogo");
+            logo.getStyleClass().add("dashboardLogo");
+            logo.setAlignment(Pos.CENTER);
+            logo.setMinSize(32, 32);
+            logo.setPrefSize(32, 32);
+            logo.setMaxSize(32, 32);
+            var brandTitle = new Label("Local Focus");
             brandTitle.getStyleClass().add("dashboardBrandTitle");
-            var brandSubtitle = new Label("Coach dashboard");
+            var brandSubtitle = new Label("Coach");
             brandSubtitle.getStyleClass().add("dashboardBrandSubtitle");
-            var brand = new VBox(4, brandTitle, brandSubtitle);
+            var brandCopy = new VBox(1, brandTitle, brandSubtitle);
+            var brand = new HBox(10, logo, brandCopy);
             brand.setId("dashboardBrand");
             brand.getStyleClass().add("dashboardBrand");
+            brand.setAlignment(Pos.CENTER_LEFT);
 
             var spacer = new Region();
             VBox.setVgrow(spacer, Priority.ALWAYS);
-            var privacy = new Label(
-                    "Your browsing history and personal data never leave this device.");
+            var privacyTitle = new Label("●  Local-only privacy");
+            privacyTitle.getStyleClass().add("dashboardPrivacyTitle");
+            var privacy = new Label("No browsing history or personal data leaves your device.");
             privacy.setId("dashboardPrivacy");
             privacy.setWrapText(true);
             privacy.getStyleClass().add("dashboardPrivacy");
+            var privacyPanel = new VBox(4, privacyTitle, privacy);
+            privacyPanel.setId("dashboardPrivacyPanel");
+            privacyPanel.getStyleClass().add("dashboardPrivacyPanel");
 
             var navigation = new VBox(8, focusRulesNavigation, strictModeNavigation);
             navigation.getStyleClass().add("dashboardNavigation");
-            var sidebar = new VBox(24, brand, navigation, spacer, privacy);
+            var sidebar = new VBox(20, brand, navigation, spacer, privacyPanel);
             sidebar.setId("dashboardSidebar");
             sidebar.getStyleClass().add("dashboardSidebar");
             sidebar.setAlignment(Pos.TOP_LEFT);
-            sidebar.setPadding(new Insets(28, 20, 24, 20));
+            sidebar.setPadding(new Insets(16, 12, 16, 12));
+            sidebar.setMinWidth(208);
+            sidebar.setPrefWidth(208);
+            sidebar.setMaxWidth(208);
             setLeft(sidebar);
         }
 
@@ -140,11 +221,24 @@ public final class DashboardApp {
         }
 
         private void setDashboardContent(Parent content) {
+            content.setStyle(content.getStyle() + "; -fx-background-color: #f0efe9;");
+            pinnedFooter.getChildren().clear();
+            if (content instanceof BorderPane page && page.getBottom() != null) {
+                var footer = page.getBottom();
+                page.setBottom(null);
+                pinnedFooter.getChildren().setAll(footer);
+                pinnedFooter.setManaged(true);
+                pinnedFooter.setVisible(true);
+            } else {
+                pinnedFooter.setManaged(false);
+                pinnedFooter.setVisible(false);
+            }
             var scroll = new ScrollPane(content);
+            scroll.setId("dashboardContentViewport");
             scroll.setFitToWidth(true);
             scroll.setPannable(true);
             scroll.getStyleClass().add("dashboardContent");
-            setCenter(scroll);
+            contentShell.setCenter(scroll);
             if (getScene() != null) {
                 applyCss();
             }
