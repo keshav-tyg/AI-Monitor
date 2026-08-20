@@ -163,7 +163,8 @@ public final class StrictModeView extends BorderPane {
         start.getStyleClass().add("strictPrimaryAction");
         start.setMaxWidth(Double.MAX_VALUE);
         start.setDefaultButton(true);
-        start.setOnAction(event -> startSession(timed.isSelected(), duration, earlyExit, feedback));
+        start.setOnAction(event -> startSession(
+                timed.isSelected(), durationHours, durationMinutePart, earlyExit, feedback));
 
         var timedOption = sessionOption(
                 "timedSessionOption",
@@ -298,14 +299,40 @@ public final class StrictModeView extends BorderPane {
     }
 
     private void startSession(
-            boolean timed, TextField duration, CheckBox earlyExit, Label feedback) {
+            boolean timed,
+            TextField durationHours,
+            TextField durationMinutePart,
+            CheckBox earlyExit,
+            Label feedback) {
         var payload = new LinkedHashMap<String, Object>();
         if (timed) {
+            final long hours;
+            try {
+                hours = Long.parseLong(durationHours.getText().trim());
+            } catch (NumberFormatException exception) {
+                feedback.setText("Enter whole numbers for hours and minutes");
+                return;
+            }
+            if (hours < 0) {
+                feedback.setText("Hours must be 0 or more");
+                return;
+            }
+            final long minutePart;
+            try {
+                minutePart = Long.parseLong(durationMinutePart.getText().trim());
+            } catch (NumberFormatException exception) {
+                feedback.setText("Enter whole numbers for hours and minutes");
+                return;
+            }
+            if (minutePart < 0 || minutePart > 59) {
+                feedback.setText("Minutes must be between 0 and 59");
+                return;
+            }
             final long minutes;
             try {
-                minutes = Long.parseLong(duration.getText().trim());
-            } catch (NumberFormatException exception) {
-                feedback.setText("Enter a positive duration in minutes");
+                minutes = Math.addExact(Math.multiplyExact(hours, 60), minutePart);
+            } catch (ArithmeticException exception) {
+                feedback.setText("Duration must be 525,600 minutes or less");
                 return;
             }
             if (minutes <= 0) {

@@ -199,6 +199,24 @@
     -fx-border-color: transparent;
 }
 
+.dashboard .dashboardContent > .scroll-bar:vertical {
+    -fx-opacity: 0;
+    -fx-min-width: 0;
+    -fx-pref-width: 0;
+    -fx-max-width: 0;
+}
+
+.dashboard .dashboardContent > .scroll-bar:horizontal {
+    -fx-opacity: 0;
+    -fx-min-height: 0;
+    -fx-pref-height: 0;
+    -fx-max-height: 0;
+}
+
+.dashboard .dashboardContent > .corner {
+    -fx-background-color: transparent;
+}
+
 .dashboard .dashboardContentShell,
 .dashboard .dashboardPinnedFooter {
     -fx-background-color: #f0efe9;

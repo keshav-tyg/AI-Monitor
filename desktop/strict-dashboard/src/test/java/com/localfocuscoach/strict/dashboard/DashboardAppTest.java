@@ -15,6 +15,8 @@ import javafx.scene.Scene;
 import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollBar;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
@@ -166,6 +168,101 @@ class DashboardAppTest {
             return null;
         });
         client.close();
+    }
+
+    @Test
+    void trafficLightsControlTheUndecoratedRuntimeStage() {
+        var client = client(false);
+        FxTestSupport.call(() -> {
+            var stage = new Stage();
+            stage.initStyle(StageStyle.UNDECORATED);
+            var dashboard = new DashboardApp.DashboardView(client, stage);
+            stage.setScene(new Scene(dashboard, 1100, 760));
+            stage.show();
+            stage.setMaximized(false);
+            try {
+                assertEquals(StageStyle.UNDECORATED, stage.getStyle());
+
+                fireMouse(
+                        dashboard.lookup("#macosZoom"),
+                        MouseEvent.MOUSE_CLICKED,
+                        6,
+                        6,
+                        80,
+                        20,
+                        MouseButton.PRIMARY);
+                assertTrue(stage.isMaximized());
+                fireMouse(
+                        dashboard.lookup("#macosZoom"),
+                        MouseEvent.MOUSE_CLICKED,
+                        6,
+                        6,
+                        80,
+                        20,
+                        MouseButton.PRIMARY);
+                assertFalse(stage.isMaximized());
+
+                fireMouse(
+                        dashboard.lookup("#macosMinimize"),
+                        MouseEvent.MOUSE_CLICKED,
+                        6,
+                        6,
+                        58,
+                        20,
+                        MouseButton.PRIMARY);
+                assertTrue(stage.isIconified());
+                stage.setIconified(false);
+
+                fireMouse(
+                        dashboard.lookup("#macosClose"),
+                        MouseEvent.MOUSE_CLICKED,
+                        6,
+                        6,
+                        34,
+                        20,
+                        MouseButton.PRIMARY);
+                assertFalse(stage.isShowing());
+            } finally {
+                dashboard.dispose();
+                stage.close();
+            }
+            return null;
+        });
+        client.close();
+    }
+
+    @Test
+    void hidesScrollbarChromeWithoutDisablingProgrammaticScrolling() {
+        var client = client(false);
+        var dashboard = FxTestSupport.call(() -> {
+            var view = new DashboardApp.DashboardView(client);
+            new Scene(view, 1100, 760);
+            view.applyCss();
+            view.layout();
+            return view;
+        });
+        try {
+            FxTestSupport.waitFor(
+                    () -> dashboard.lookup("#instagramReelsRule") != null,
+                    "scrollable Focus Rules cards");
+            FxTestSupport.call(() -> {
+                dashboard.applyCss();
+                dashboard.layout();
+                var viewport = (ScrollPane) dashboard.lookup("#dashboardContentViewport");
+                var scrollbars = viewport.lookupAll(".scroll-bar").stream()
+                        .map(ScrollBar.class::cast)
+                        .toList();
+                assertFalse(scrollbars.isEmpty());
+                for (var scrollbar : scrollbars) {
+                    assertEquals(0.0, scrollbar.getOpacity(), 0.01);
+                }
+                viewport.setVvalue(1.0);
+                assertEquals(1.0, viewport.getVvalue(), 0.01);
+                return null;
+            });
+        } finally {
+            dispose(dashboard, client);
+        }
     }
 
     @Test
