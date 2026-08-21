@@ -100,13 +100,20 @@ export const CLASSIFIER = {
 export const INTENT_PROMPT_QUESTION = 'Hey, what are we doing here?';
 
 /** The budget is configurable, so the button and the wall must quote the same
- *  number the rule actually grants rather than a hard-coded five. */
+ *  number the rule actually grants rather than a hard-coded five. Templates
+ *  pluralise "minute" against the rendered value — a 1-minute budget read
+ *  "give me 1 minutes" otherwise, and the wall then echoed it. */
+function pluralMinutes(minutes: number): string {
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+}
+
 export function doomscrollButtonLabel(minutes: number): string {
-  return `Doomscrolling — give me ${minutes} minutes`;
+  return `Doomscrolling — give me ${pluralMinutes(minutes)}`;
 }
 
 export function budgetSpentReason(minutes: number): string {
-  return `The ${minutes} minutes you asked for are up`;
+  const verb = minutes === 1 ? 'is' : 'are';
+  return `The ${pluralMinutes(minutes)} you asked for ${verb} up`;
 }
 
 /** Shown when a wall that was already raised is simply still raised. */

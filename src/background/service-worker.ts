@@ -567,7 +567,14 @@ async function buildStatus(now: number): Promise<BackgroundResponse> {
       ? declaration.intent === 'doomscroll'
         ? {
             intent: declaration.intent,
-            usedMs: Math.max(0, declaration.spentMs),
+            // Cap at the budget. `spendDeclaredBudget` stops incrementing once
+            // the wall is raised, but the last spend interval can push spent
+            // past the budget by up to `MAX_EVENT_GAP_MS`. Rendering
+            // "1m 26s of 1 min session" made the popup look wrong.
+            usedMs: Math.min(
+              rule.doomscrollBudgetMinutes * 60_000,
+              Math.max(0, declaration.spentMs),
+            ),
             budgetMinutes: rule.doomscrollBudgetMinutes,
           }
         : { intent: declaration.intent }
