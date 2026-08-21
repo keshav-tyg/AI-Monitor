@@ -169,6 +169,67 @@ it('reports elapsed doomscroll session time to the popup', async () => {
   });
 });
 
+it('caps the popup timer at the budget once the wall is raised', async () => {
+  await cacheDesktopSettingsForTest({
+    enabled: true,
+    rules: {
+      ...DEFAULT_SETTINGS.rules,
+      'instagram-reels': {
+        ...DEFAULT_SETTINGS.rules['instagram-reels'],
+        enabled: true,
+        doomscrollBudgetMinutes: 1,
+      },
+    },
+  });
+
+  await arrive();
+  await declare('doomscroll');
+  // Real usage: the last spend interval always overshoots the exact budget by
+  // up to MAX_EVENT_GAP_MS. The popup should not tell the person their
+  // 1-minute session lasted 1m 26s.
+  await spendForeground(80_000);
+  await routeForTest(
+    { type: 'event', event: { site: 'instagram-reels', kind: 'content-advance', at: Date.now() } },
+    72,
+  );
+
+  const response = await routeForTest({ type: 'get-status' }, undefined);
+  const reels =
+    response.ok && response.type === 'status'
+      ? response.sites.find((site) => site.site === 'instagram-reels')
+      : undefined;
+
+  expect(reels?.session).toEqual({ intent: 'doomscroll', usedMs: 60_000, budgetMinutes: 1 });
+});
+
+it('walls a 1-minute budget with grammatically correct copy', async () => {
+  await cacheDesktopSettingsForTest({
+    enabled: true,
+    rules: {
+      ...DEFAULT_SETTINGS.rules,
+      'instagram-reels': {
+        ...DEFAULT_SETTINGS.rules['instagram-reels'],
+        enabled: true,
+        doomscrollBudgetMinutes: 1,
+      },
+    },
+  });
+
+  await arrive();
+  await declare('doomscroll');
+  await spendForeground(60_000);
+  await routeForTest(
+    { type: 'event', event: { site: 'instagram-reels', kind: 'content-advance', at: Date.now() } },
+    72,
+  );
+
+  expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(72, {
+    type: 'wall',
+    site: 'instagram-reels',
+    reason: 'The 1 minute you asked for is up',
+  });
+});
+
 it('walls a declared purposeful session only for a high-confidence contradiction', async () => {
   classifyMock.mockResolvedValue({
     verdict: 'contradicts',
