@@ -5,3 +5,7 @@ tmp/
 .worktrees/
 desktop/.gradle/
 desktop/**/build/
+# Release artifacts produced by the runbook. Uploaded to CWS and GitHub
+# Releases directly; never checked into git.
+/local-focus-coach-extension-*.zip
+/local-focus-coach-macos-*.zip
