@@ -1,4 +1,32 @@
-import { PRIVACY_PROMISE } from '../shared/constants';
+import { SUPPORTED_SITES, PRIVACY_PROMISE } from '../shared/constants';
+import type { ActivityEntry, ActivityKind, SiteId } from '../shared/types';
+
+const ACTIVITY_LABELS: Record<ActivityKind, string> = {
+  'session-started': 'Session started',
+  'budget-spent': 'Timer ended',
+  'wall-shown': 'Wall shown',
+  'leave-pressed': 'Leave pressed',
+};
+
+function siteLabel(site: SiteId): string {
+  return SUPPORTED_SITES.find((entry) => entry.id === site)?.label ?? site;
+}
+
+async function fetchActivity(): Promise<ActivityEntry[]> {
+  const runtime = (
+    globalThis as { chrome?: { runtime?: { sendMessage?: (value: unknown) => Promise<unknown> } } }
+  ).chrome?.runtime;
+  if (!runtime?.sendMessage) return [];
+  try {
+    const response = (await runtime.sendMessage({ type: 'get-activity' })) as
+      | { ok?: boolean; type?: string; entries?: ActivityEntry[] }
+      | undefined;
+    return response?.ok && response.type === 'activity' ? (response.entries ?? []) : [];
+  } catch {
+    // The launcher stays useful even when the worker has torn down.
+    return [];
+  }
+}
 
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -70,7 +98,42 @@ export async function renderOptions(root: Element): Promise<void> {
   unavailable.className = 'unavailable';
   unavailable.dataset['desktopUnavailable'] = '';
 
-  root.append(heading, promise, managed, firstTime, unavailable);
+  const timeline = element('section');
+  timeline.className = 'activity';
+  timeline.dataset['activityTimeline'] = '';
+  timeline.append(
+    element('h2', 'Recent activity'),
+    element(
+      'p',
+      'The last two hundred moments this extension recorded on this device. ' +
+        'Details are built from your own settings — no page content is stored.',
+    ),
+  );
+  const list = element('ul');
+  list.dataset['activityList'] = '';
+  timeline.append(list);
+
+  root.append(heading, promise, managed, firstTime, unavailable, timeline);
+
+  const entries = await fetchActivity();
+  if (entries.length === 0) {
+    const empty = element('li', 'Nothing yet — start a session on a watched feed.');
+    empty.dataset['activityEmpty'] = '';
+    list.append(empty);
+    return;
+  }
+
+  // Newest first: the thing that just happened is the thing being looked for.
+  for (const entry of [...entries].reverse()) {
+    const row = element('li');
+    row.dataset['activityKind'] = entry.kind;
+    const when = new Date(entry.at).toLocaleString();
+    row.append(
+      element('time', when),
+      element('span', ` — ${siteLabel(entry.site)} — ${ACTIVITY_LABELS[entry.kind]} — ${entry.detail}`),
+    );
+    list.append(row);
+  }
 }
 
 const mount = document.querySelector('#app');
