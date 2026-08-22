@@ -38,7 +38,12 @@ export function createManifest(environment: BuildEnvironment) {
       'offscreen',
       'nativeMessaging',
     ],
-    icons: { '128': 'icons/icon-128.png' },
+    icons: {
+      '16': 'icons/icon-16.png',
+      '32': 'icons/icon-32.png',
+      '48': 'icons/icon-48.png',
+      '128': 'icons/icon-128.png',
+    },
     host_permissions: [
       '*://*.instagram.com/*',
       '*://x.com/*',
@@ -61,7 +66,17 @@ export function createManifest(environment: BuildEnvironment) {
         run_at: 'document_idle',
       },
     ],
-    action: { default_popup: 'src/popup/index.html', default_title: 'Local Focus Coach' },
+    action: {
+      default_popup: 'src/popup/index.html',
+      default_title: 'Local Focus Coach',
+      // Toolbar icon. Chrome picks the closest match for the current density,
+      // so all three exist for crisp rendering on standard and Retina displays.
+      default_icon: {
+        '16': 'icons/icon-16.png',
+        '32': 'icons/icon-32.png',
+        '48': 'icons/icon-48.png',
+      },
+    },
     options_page: 'src/options/index.html',
     ...(publicKey ? { key: publicKey } : {}),
   } satisfies ManifestV3Export;

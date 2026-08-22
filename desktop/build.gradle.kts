@@ -183,3 +183,20 @@ tasks.register<Exec>("jpackage") {
         )
     }
 }
+
+// jpackage does not accept arbitrary payload — its --input dir goes into
+// Contents/app/. The installer scripts belong in Contents/Resources/installer/
+// so that a downloaded .app carries everything a person needs to register the
+// native-messaging host without cloning the repo. Copying after jpackage runs
+// keeps the packaging step itself simple and reversible.
+tasks.register<Copy>("bundleInstaller") {
+    group = "distribution"
+    description = "Copies the installer scripts into the built .app so downloads are self-contained."
+    dependsOn("jpackage")
+    from(layout.projectDirectory.dir("installer"))
+    into(appImageDirectory.map { it.dir("Contents/Resources/installer") })
+}
+
+tasks.named("jpackage") {
+    finalizedBy("bundleInstaller")
+}
