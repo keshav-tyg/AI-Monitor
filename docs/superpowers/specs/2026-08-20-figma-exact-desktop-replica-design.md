@@ -12,7 +12,7 @@ service, auto-save, and Strict Mode security behavior.
 
 The authoritative visual reference is the user-provided Figma export at:
 
-`/Users/keshavtyagi/Downloads/macOS Dashboard for Local Focus Coach.zip`
+`~/Downloads/macOS Dashboard for Local Focus Coach.zip`
 
 Reference screens supplied with the export show Focus Rules and Strict Mode.
 The exported `src/app/App.tsx` and `src/styles/theme.css` define the exact

@@ -632,7 +632,7 @@ Expected: BUILD SUCCESSFUL; dashboard, service, and relay launchers are present 
 - [ ] **Step 4: Complete the manual macOS smoke test**
 
 1. Install registrations using the current development extension ID and the packaged app image.
-2. Load unpacked from `/Users/keshavtyagi/Developer/AI monitor/dist`, not the repository root.
+2. Load unpacked from `<repo>/dist`, not the repository root.
 3. Open the desktop app; configure a site and save.
 4. Confirm Chrome reports the matching revision within five seconds and enforces it.
 5. Disconnect the native host; confirm cached rules still enforce and dashboard reports Waiting for Chrome.
