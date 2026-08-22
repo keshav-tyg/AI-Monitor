@@ -43,6 +43,34 @@ registrations. Follow
 for that pass. Do not substitute a different Chromium browser, a temporary
 extension ID, or a system-wide LaunchDaemon.
 
+## First-launch install (packaged .app)
+
+Run against a fresh build produced by
+`cd desktop && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew jpackage` with
+the production identity file copied into `Contents/Resources/`. The bundled
+installer scripts and identity file are what make the download self-contained.
+
+- [ ] **Right-click Open is the first launch.** After dragging the .app to
+      Applications, a plain double-click is silently blocked by Gatekeeper.
+      Right-click → Open → Open in the dialog succeeds. This must match the
+      wording on the download page.
+- [ ] **Bootstrap registers the native host without Terminal.** With no
+      previous Local Focus Coach install (delete
+      `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.localfocuscoach.strict_mode.json`
+      and the corresponding `_dev` file if present), launch the .app.
+      Within a few seconds
+      `~/Library/Application Support/Local Focus Coach/logs/first-run-bootstrap.log`
+      records the run and the native-host manifest is written.
+- [ ] **Bootstrap fails safely without an identity file.** Remove
+      `Contents/Resources/production-extension-identity.json` from the .app,
+      relaunch. The log records "production identity file missing", no
+      manifest is written, and the dashboard still opens.
+- [ ] **Bootstrap is idempotent.** Relaunch the .app with the native-host
+      manifest already in place. The log records "already registered" and no
+      new manifest is written.
+- [ ] **LaunchAgent survives log-out and log-in.** Log out, log back in.
+      Confirm the strict-service process is running before any user action.
+
 ## Fail-open guarantees
 
 - [ ] **Unsupported routes generate no action.** Visit a profile page, a search
@@ -179,3 +207,8 @@ carry over — never reset, never bypassed.
 - [ ] **The timeline reads plainly.** Each row shows a local timestamp, the feed
       label, one of the four moments, and a sentence built from your settings —
       no URLs, captions, or ids anywhere in it.
+- [ ] **Options empty state explains itself.** With the desktop app not
+      running (kill the strict-service process), open the extension's Options
+      page. The "Nothing happens until the desktop app is running" section is
+      visible and the unavailable-app paragraph names Applications and
+      right-click Open.

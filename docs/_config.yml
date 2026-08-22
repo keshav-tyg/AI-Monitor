@@ -1,0 +1,19 @@
+# GitHub Pages configuration for docs/.
+#
+# Enabling Pages in the repository settings — Settings → Pages → Build and
+# deployment → Deploy from a branch → main / /docs — renders every Markdown
+# file under docs/ at https://<owner>.github.io/<repo>/<file-slug>. Jekyll
+# handles that for free; no workflow file is needed.
+#
+# The one required output is docs/privacy-policy.md → published at
+# .../privacy-policy — the URL the Chrome Web Store submission expects.
+
+title: Local Focus Coach
+description: A private, local-first Chrome extension for macOS that helps you notice sustained passive feed use.
+theme: jekyll-theme-cayman
+
+# Reduce Jekyll noise: don't try to build unrelated repository files as pages.
+exclude:
+  - superpowers
+  - manual-test-checklist.md
+  - store-listing.md
