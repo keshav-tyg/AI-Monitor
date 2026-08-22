@@ -41,6 +41,13 @@ public final class DashboardApp {
 
         @Override
         public void start(Stage primaryStage) {
+            try {
+                Thread bootstrap = new Thread(
+                        FirstRunBootstrap::runIfEligible, "first-run-bootstrap");
+                bootstrap.setDaemon(true);
+                bootstrap.start();
+            } catch (Throwable ignored) {
+            }
             client = new ServiceClient();
             primaryStage.initStyle(StageStyle.UNDECORATED);
             dashboardView = new DashboardView(client, primaryStage);

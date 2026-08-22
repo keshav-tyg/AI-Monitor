@@ -80,23 +80,33 @@ Paste this section, verbatim, onto the download page.
 1. Download `Local Focus Coach.zip` and unarchive it. Drag the resulting
    `Local Focus Coach.app` into your `Applications` folder.
 
-2. Open Terminal and run this command. It clears the download quarantine and
-   registers the native-messaging host so Chrome can talk to the app:
-
-   ```sh
-   xattr -cr "/Applications/Local Focus Coach.app" \
-     && "/Applications/Local Focus Coach.app/Contents/Resources/installer/install-local-focus-coach.sh" \
-          --app-image "/Applications/Local Focus Coach.app" \
-          --production-identity-file "/Applications/Local Focus Coach.app/Contents/Resources/production-extension-identity.json"
-   ```
-
-3. Right-click `Local Focus Coach.app` in Finder → Open → Open. macOS will
+2. Right-click `Local Focus Coach.app` in Finder → Open → Open. macOS will
    ask once; after that it launches normally from Spotlight or the Dock.
+   The first launch registers the Chrome native-messaging host for you —
+   no Terminal required.
 
-4. Install the Local Focus Coach extension from the Chrome Web Store.
+3. Install the Local Focus Coach extension from the Chrome Web Store.
 
-5. Open the app to set your rules. That is all — Chrome will pick them up on
+4. Open the app to set your rules. That is all — Chrome will pick them up on
    the next feed visit.
+
+#### Troubleshooting: manual install (fallback)
+
+If the extension cannot reach the app after the first launch — for example
+because Gatekeeper blocked the app before it finished starting, or the
+download quarantine attribute prevented the bundled installer from running —
+open Terminal and run:
+
+```sh
+xattr -cr "/Applications/Local Focus Coach.app" \
+  && "/Applications/Local Focus Coach.app/Contents/Resources/installer/install-local-focus-coach.sh" \
+       --app-image "/Applications/Local Focus Coach.app" \
+       --production-identity-file "/Applications/Local Focus Coach.app/Contents/Resources/production-extension-identity.json"
+```
+
+Then relaunch the app. The bootstrap logs its progress to
+`~/Library/Application Support/Local Focus Coach/logs/first-run-bootstrap.log`
+if you want to see what happened.
 
 To uninstall the native-messaging registration but keep the app:
 
@@ -114,7 +124,3 @@ the uninstall command above.
 - **Sparkle / any auto-updater.** Skipping until there is a real update
   cadence to justify the code.
 - **Notarization.** Skipping until we join the Apple Developer Program.
-- **A first-launch bootstrap that runs the installer automatically.** The
-  install script does the same work as the future bootstrap would, and
-  shell is easier to reason about than early-startup Java that has to
-  refuse to break the app if it fails. Track that as a follow-up.
