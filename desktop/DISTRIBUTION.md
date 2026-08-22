@@ -80,15 +80,22 @@ Paste this section, verbatim, onto the download page.
 1. Download `Local Focus Coach.zip` and unarchive it. Drag the resulting
    `Local Focus Coach.app` into your `Applications` folder.
 
-2. Right-click `Local Focus Coach.app` in Finder → Open → Open. macOS will
-   ask once; after that it launches normally from Spotlight or the Dock.
+2. **Right-click `Local Focus Coach.app` in Finder and choose Open.** A
+   Gatekeeper dialog appears once — click Open again to confirm.
+   *Double-clicking silently fails* because the app is signed for local
+   distribution rather than the App Store. This step only happens the first
+   time.
+
    The first launch registers the Chrome native-messaging host for you —
-   no Terminal required.
+   no Terminal required. From now on Local Focus Coach reopens itself when
+   you log in, and you can launch it from Spotlight or the Dock.
 
 3. Install the Local Focus Coach extension from the Chrome Web Store.
 
-4. Open the app to set your rules. That is all — Chrome will pick them up on
-   the next feed visit.
+4. Open the app, enable a rule, set a session budget. Chrome will pick that
+   up on the next visit to Reels / Shorts / the X timeline — you do not need
+   to reload anything. Until you enable a rule, the extension enforces
+   nothing; that is by design.
 
 #### Troubleshooting: manual install (fallback)
 

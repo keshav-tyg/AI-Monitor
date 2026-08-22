@@ -33,6 +33,15 @@ it('keeps the local-only privacy promise and explains how to recover when the de
   );
 });
 
+it('explains the extension will do nothing until the desktop app runs', async () => {
+  await renderOptions(document.querySelector('#app')!);
+
+  const firstTime = document.querySelector('[data-first-time]');
+  expect(firstTime).toHaveTextContent('Nothing happens until the desktop app is running');
+  // The reassurance that this is by design, not a bug the user has to debug.
+  expect(firstTime).toHaveTextContent('That is not a bug');
+});
+
 it('does not send a browser settings-save request', async () => {
   await renderOptions(document.querySelector('#app')!);
 
