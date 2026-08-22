@@ -42,6 +42,48 @@ it('explains the extension will do nothing until the desktop app runs', async ()
   expect(firstTime).toHaveTextContent('That is not a bug');
 });
 
+it('renders the recent activity timeline newest first', async () => {
+  (chrome.runtime.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(
+    async (message: { type: string }) => {
+      if (message.type !== 'get-activity') return undefined;
+      return {
+        ok: true,
+        type: 'activity',
+        entries: [
+          {
+            id: '1',
+            at: Date.parse('2026-08-22T00:00:00'),
+            site: 'instagram-reels',
+            kind: 'session-started',
+            detail: 'Doomscrolling — 1 minute budget',
+          },
+          {
+            id: '2',
+            at: Date.parse('2026-08-22T00:01:00'),
+            site: 'instagram-reels',
+            kind: 'wall-shown',
+            detail: 'The 1 minute you asked for is up',
+          },
+        ],
+      };
+    },
+  );
+
+  await renderOptions(document.querySelector('#app')!);
+
+  const rows = document.querySelectorAll('[data-activity-list] li');
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toHaveTextContent('Wall shown');
+  expect(rows[0]).toHaveTextContent('Instagram Reels');
+  expect(rows[1]).toHaveTextContent('Session started');
+});
+
+it('shows an empty-state row when nothing has happened yet', async () => {
+  await renderOptions(document.querySelector('#app')!);
+
+  expect(document.querySelector('[data-activity-empty]')).toHaveTextContent('Nothing yet');
+});
+
 it('does not send a browser settings-save request', async () => {
   await renderOptions(document.querySelector('#app')!);
 
