@@ -25,13 +25,21 @@ Do not perform this procedure against a production Chrome profile unless the
 tester accepts the session and graceful-quit effects. Close or save unrelated
 Chrome work first.
 
-1. From the repository root, build the production extension with the release
-   public key as documented in the root README:
+1. From the repository root, build the production extension against the
+   Chrome-Web-Store-assigned identity (see [`../../RELEASE.md`](../../RELEASE.md)
+   for how the ID and public key get bootstrapped and saved):
 
    ```sh
-   LFC_EXTENSION_PUBLIC_KEY='<base64 DER SubjectPublicKeyInfo>' \
-     npm run build:production
+   export LFC_EXTENSION_ID="$(cat ~/.local/share/local-focus-coach/cws/extension-id)"
+   export LFC_EXTENSION_PUBLIC_KEY="$(cat ~/.local/share/local-focus-coach/cws/extension-public-key.b64)"
+   LFC_EXTENSION_CHANNEL=production npm run build:production
    ```
+
+   `LFC_EXTENSION_ID` populates `dist/production-extension-identity.json` for
+   the installer; `LFC_EXTENSION_PUBLIC_KEY` embeds the CWS public key in
+   `dist/manifest.json` so this local unpacked load reproduces the exact
+   store-assigned ID. This built copy is for local acceptance testing only —
+   never upload a keyed manifest back to CWS.
 
 2. Open `chrome://extensions`, enable Developer mode, load `dist/`, and confirm
    Chrome's extension ID matches `dist/production-extension-identity.json`.

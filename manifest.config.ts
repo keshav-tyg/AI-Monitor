@@ -17,15 +17,33 @@ export interface ProductionIdentity {
  * Local-only manifest. Every permission here exists to enforce rules on this
  * device: no remote endpoints, no analytics host, no optional permissions.
  *
- * `satisfies` rather than `defineManifest`: the helper's return type is a union
- * that includes a factory function, which erases the concrete keys the privacy
- * test asserts on.
+ * Three environment shapes are supported:
+ *
+ * - **Development** (default) — name is `Local Focus Coach (Development)`, no
+ *   `key` field. Chrome assigns a random ID that changes per machine. Good
+ *   for iterating; useless for matching a real production install.
+ *
+ * - **Production for the Chrome Web Store** — `LFC_EXTENSION_CHANNEL=production`
+ *   alone. Name is `Local Focus Coach`, no `key` field. This is what you
+ *   upload as a `.zip`: the store rejects a `key` in a new listing and
+ *   assigns the extension ID itself.
+ *
+ * - **Production for local testing under the CWS-assigned ID** —
+ *   `LFC_EXTENSION_CHANNEL=production` plus `LFC_EXTENSION_PUBLIC_KEY=<the
+ *   base64 key the store gave you back>`. Same production name but with the
+ *   `key` field embedded so an unpacked load reproduces the store's ID.
+ *   Only for local dev — never upload this build to the store.
+ *
+ * `satisfies` rather than `defineManifest`: the helper's return type is a
+ * union that includes a factory function, which erases the concrete keys
+ * the privacy test asserts on.
  */
 export function createManifest(environment: BuildEnvironment) {
-  const publicKey = productionPublicKey(environment);
+  const channel = productionChannel(environment);
+  const publicKey = channel === 'production' ? optionalPublicKey(environment) : undefined;
   return {
     manifest_version: 3,
-    name: publicKey ? 'Local Focus Coach' : 'Local Focus Coach (Development)',
+    name: channel === 'production' ? 'Local Focus Coach' : 'Local Focus Coach (Development)',
     version: '0.1.0',
     description:
       'Detects sustained passive feed use on this device and applies the intervention you configured. Nothing leaves this device.',
@@ -82,14 +100,38 @@ export function createManifest(environment: BuildEnvironment) {
   } satisfies ManifestV3Export;
 }
 
+/**
+ * The identity the desktop app has to know about to register a native-host
+ * manifest for the production extension.
+ *
+ * Sources, in order:
+ *
+ * 1. `LFC_EXTENSION_ID` — the 32-character ID the Chrome Web Store assigned to
+ *    the listing on first upload. This is the authoritative source once a
+ *    listing exists.
+ * 2. `LFC_EXTENSION_PUBLIC_KEY` — the base64 DER key. Chrome derives an ID
+ *    from this by the same algorithm the store uses, so a build with this
+ *    key set produces the same ID the store would.
+ *
+ * Only makes sense in the production channel. Returns undefined otherwise.
+ */
 export function productionIdentity(environment: BuildEnvironment): ProductionIdentity | undefined {
-  const publicKey = productionPublicKey(environment);
-  if (!publicKey) return undefined;
+  if (productionChannel(environment) !== 'production') return undefined;
 
-  const digest = createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest();
-  const extensionId = [...digest.subarray(0, 16)]
-    .map((byte) => `${String.fromCharCode(97 + (byte >> 4))}${String.fromCharCode(97 + (byte & 15))}`)
-    .join('');
+  const explicit = environment['LFC_EXTENSION_ID'];
+  if (explicit) {
+    if (!/^[a-p]{32}$/.test(explicit)) {
+      throw new Error('LFC_EXTENSION_ID must be 32 characters of a–p');
+    }
+    return identityFor(explicit);
+  }
+
+  const publicKey = optionalPublicKey(environment);
+  if (!publicKey) return undefined;
+  return identityFor(deriveIdFromKey(publicKey));
+}
+
+function identityFor(extensionId: string): ProductionIdentity {
   return {
     version: 1,
     channel: 'production',
@@ -98,17 +140,27 @@ export function productionIdentity(environment: BuildEnvironment): ProductionIde
   };
 }
 
-function productionPublicKey(environment: BuildEnvironment): string | undefined {
-  const channel = environment['LFC_EXTENSION_CHANNEL'] ?? 'development';
-  if (channel === 'development') return undefined;
-  if (channel !== 'production') {
-    throw new Error('LFC_EXTENSION_CHANNEL must be development or production');
-  }
+function deriveIdFromKey(publicKey: string): string {
+  const digest = createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest();
+  return [...digest.subarray(0, 16)]
+    .map((byte) => `${String.fromCharCode(97 + (byte >> 4))}${String.fromCharCode(97 + (byte & 15))}`)
+    .join('');
+}
 
+function productionChannel(environment: BuildEnvironment): 'production' | 'development' {
+  const channel = environment['LFC_EXTENSION_CHANNEL'] ?? 'development';
+  if (channel === 'production' || channel === 'development') return channel;
+  throw new Error('LFC_EXTENSION_CHANNEL must be development or production');
+}
+
+/**
+ * Validates and returns the base64 DER public key when one is present, or
+ * undefined when it is not. Absence is not an error — the store-upload build
+ * is expected to have no key.
+ */
+function optionalPublicKey(environment: BuildEnvironment): string | undefined {
   const encoded = environment['LFC_EXTENSION_PUBLIC_KEY'];
-  if (!encoded) {
-    throw new Error('LFC_EXTENSION_PUBLIC_KEY is required for a production build');
-  }
+  if (!encoded) return undefined;
   try {
     const key = createPublicKey({ key: Buffer.from(encoded, 'base64'), format: 'der', type: 'spki' });
     const canonical = key.export({ format: 'der', type: 'spki' }).toString('base64');

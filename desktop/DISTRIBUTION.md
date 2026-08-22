@@ -35,17 +35,21 @@ about on the download page:
 
 ## How to prepare a release
 
-1. Build the extension for production. Set `LFC_EXTENSION_PUBLIC_KEY` to the
-   canonical base64 of your production DER SubjectPublicKeyInfo (see
-   `scripts/generate-extension-key.sh`). Then:
+The full step-by-step lives in [`../RELEASE.md`](../RELEASE.md) — this section
+is a quick reference for the `.app` half only. The one prerequisite is that
+the Chrome Web Store listing already exists and you have saved its assigned
+extension ID somewhere the shell can read; the RELEASE runbook writes it to
+`~/.local/share/local-focus-coach/cws/extension-id`.
+
+1. Emit the identity file the `.app` needs to bundle:
 
    ```sh
-   npm run build:production
+   export LFC_EXTENSION_ID="$(cat ~/.local/share/local-focus-coach/cws/extension-id)"
+   LFC_EXTENSION_CHANNEL=production npm run build:production
    ```
 
-   `dist/production-extension-identity.json` is written alongside the build.
-   Keep it — the installer needs it to lock the native-host manifest to your
-   exact production extension ID.
+   `dist/production-extension-identity.json` now names the store-assigned ID.
+   The extension bundle in `dist/` is keyless — safe to upload to CWS as-is.
 
 2. Build the `.app`:
 
@@ -58,16 +62,15 @@ about on the download page:
 3. Copy the identity file into the `.app` so users don't have to hunt for it:
 
    ```sh
-   mkdir -p "desktop/build/jpackage/Local Focus Coach.app/Contents/Resources"
-   cp dist/production-extension-identity.json \
-      "desktop/build/jpackage/Local Focus Coach.app/Contents/Resources/production-extension-identity.json"
+   cp ../dist/production-extension-identity.json \
+      "build/jpackage/Local Focus Coach.app/Contents/Resources/production-extension-identity.json"
    ```
 
 4. Zip the `.app` for distribution — Finder → File → Compress. The DMG route
    is optional and adds no security you get from the zip.
 
-5. Publish the `.zip`, this document, and `docs/privacy-policy.md` at a
-   stable URL. Link both from the Chrome Web Store listing.
+5. Publish the `.zip`, this document, and the privacy policy at a stable URL.
+   Link both from the Chrome Web Store listing.
 
 ## User-facing install instructions
 

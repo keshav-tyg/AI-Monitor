@@ -83,12 +83,14 @@ Then pass its absolute path and the production identity metadata emitted by
   --production-identity-file ../dist/production-extension-identity.json
 ```
 
-The production extension build requires `LFC_EXTENSION_PUBLIC_KEY`, containing
-the canonical base64 DER SubjectPublicKeyInfo for the release identity. Its
-matching private key remains outside the repository in protected release
-infrastructure. The build embeds only the public key, derives Chrome's stable
-ID, and emits the metadata file consumed above. No production key is included
-in this source tree.
+The production identity file is emitted when `npm run build:production` is run
+with `LFC_EXTENSION_ID` set to the 32-character ID that the Chrome Web Store
+assigned to the listing on its first upload. See
+[`../RELEASE.md`](../RELEASE.md) for the full flow — CWS assigns the ID
+itself, so no key material is required for a normal release build; the
+release runbook shows how to save the assigned ID once and reuse it every
+time. `LFC_EXTENSION_PUBLIC_KEY` is a separate, optional convenience for
+local unpacked loads that must reproduce the CWS-assigned ID.
 
 A plain `npm run build` is a development build with no manifest key. Its
 unpacked ID is not stable across machines. Register that copied local ID only
