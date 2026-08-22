@@ -25,19 +25,49 @@ describe('manifest privacy boundary', () => {
     expect(productionIdentity({})).toBeUndefined();
   });
 
-  it('requires a valid public key before creating a production manifest identity', () => {
-    expect(() => createManifest({ LFC_EXTENSION_CHANNEL: 'production' })).toThrow(
-      /LFC_EXTENSION_PUBLIC_KEY/,
-    );
-    expect(() =>
-      createManifest({
-        LFC_EXTENSION_CHANNEL: 'production',
-        LFC_EXTENSION_PUBLIC_KEY: 'not-a-public-key',
-      }),
-    ).toThrow(/public key/i);
+  it('builds a keyless production manifest for a Chrome Web Store upload', () => {
+    // No LFC_EXTENSION_PUBLIC_KEY on purpose — a new CWS listing rejects a
+    // manifest that ships a `key` field, so this is the shape the .zip must
+    // have.
+    const production = createManifest({ LFC_EXTENSION_CHANNEL: 'production' });
+
+    expect(production.name).toBe('Local Focus Coach');
+    expect('key' in production).toBe(false);
+    // No identity is derivable from this environment alone — the ID does not
+    // exist until CWS assigns one on first upload.
+    expect(productionIdentity({ LFC_EXTENSION_CHANNEL: 'production' })).toBeUndefined();
   });
 
-  it('embeds one production public key and derives a stable Chrome extension ID', () => {
+  it('accepts an explicit CWS-assigned extension id for the release identity', () => {
+    // The store hands out the ID on first upload. Every future .app package
+    // needs to know it so the bundled installer registers the native-host
+    // manifest against the right allowed_origins entry.
+    const identity = productionIdentity({
+      LFC_EXTENSION_CHANNEL: 'production',
+      LFC_EXTENSION_ID: 'llgkbdfkmgjpmlammmnidndocedopmol',
+    });
+
+    expect(identity).toEqual({
+      version: 1,
+      channel: 'production',
+      extensionId: 'llgkbdfkmgjpmlammmnidndocedopmol',
+      nativeHostName: 'com.localfocuscoach.strict_mode',
+    });
+  });
+
+  it('rejects a malformed extension id rather than storing junk', () => {
+    expect(() =>
+      productionIdentity({
+        LFC_EXTENSION_CHANNEL: 'production',
+        LFC_EXTENSION_ID: 'not-an-extension-id',
+      }),
+    ).toThrow(/LFC_EXTENSION_ID/);
+  });
+
+  it('embeds a locally supplied public key for dev builds that must match the store ID', () => {
+    // Optional convenience: paste the CWS-generated public key back into the
+    // env var and an unpacked load reproduces the store's ID. This build is
+    // for local iteration only — uploading it to CWS would be rejected.
     const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 1024 });
     const encodedPublicKey = publicKey
       .export({ format: 'der', type: 'spki' })
@@ -48,13 +78,24 @@ describe('manifest privacy boundary', () => {
     };
 
     const production = createManifest(environment);
-    const firstIdentity = productionIdentity(environment);
-    const secondIdentity = productionIdentity(environment);
+    const identity = productionIdentity(environment);
 
     expect(production.name).toBe('Local Focus Coach');
     expect(production.key).toBe(encodedPublicKey);
-    expect(firstIdentity).toEqual(secondIdentity);
-    expect(firstIdentity?.extensionId).toMatch(/^[a-p]{32}$/);
-    expect(firstIdentity?.nativeHostName).toBe('com.localfocuscoach.strict_mode');
+    expect(identity?.extensionId).toMatch(/^[a-p]{32}$/);
+    expect(identity?.nativeHostName).toBe('com.localfocuscoach.strict_mode');
+  });
+
+  it('rejects a malformed public key so a bad env var never enters the build', () => {
+    expect(() =>
+      createManifest({
+        LFC_EXTENSION_CHANNEL: 'production',
+        LFC_EXTENSION_PUBLIC_KEY: 'not-a-public-key',
+      }),
+    ).toThrow(/public key/i);
+  });
+
+  it('rejects an unknown channel', () => {
+    expect(() => createManifest({ LFC_EXTENSION_CHANNEL: 'staging' })).toThrow(/development or production/);
   });
 });

@@ -1,19 +1,32 @@
 #!/bin/sh
-# Generate the RSA identity for a production Chrome Web Store submission.
+# Generate a local RSA keypair for advanced development scenarios.
 #
-# The private key stays on your machine. Treat it like an ssh key: never commit
-# it, never paste it into a service, keep an offline backup somewhere your
-# password manager or backup drive covers.
+# You almost certainly do NOT need this to publish. The Chrome Web Store
+# assigns the extension's public key and 32-character ID on the first upload
+# of a new listing — a manifest that ships its own `key` field is rejected.
+# The RELEASE.md runbook uses the CWS-assigned key and never generates one.
 #
-# The manifest reads LFC_EXTENSION_PUBLIC_KEY at build time and derives Chrome's
-# stable extension ID from it. Using the same private key for every release
-# keeps the same ID across versions, which is what the store expects.
+# This script exists for two edge cases:
+#
+# 1. **Self-hosted distribution.** If you ever want to ship the extension as
+#    an unlisted `.crx` outside CWS, the CRX signature has to come from a key
+#    you control. This script produces one.
+#
+# 2. **Reproducing an as-yet-unknown extension ID before the first CWS
+#    upload.** Load an unpacked extension with this key baked into the
+#    manifest and Chrome derives a stable ID from it. That ID has no
+#    relationship to what CWS will eventually assign — the store picks a new
+#    key on your first upload — so this is really only useful when you plan
+#    to skip CWS.
+#
+# For the normal CWS release flow, `~/.local/share/local-focus-coach/cws/`
+# holds the store-assigned public key and ID, populated per RELEASE.md.
 #
 # Usage: scripts/generate-extension-key.sh <output-directory>
-#   e.g. scripts/generate-extension-key.sh ~/.local/share/local-focus-coach
+#   e.g. scripts/generate-extension-key.sh ~/.local/share/local-focus-coach/self-hosted
 #
-# The directory must not exist yet; the script refuses to overwrite in place so
-# a prior key is never silently replaced.
+# The directory must not exist yet; the script refuses to overwrite in place
+# so a prior key is never silently replaced.
 
 set -eu
 umask 077
@@ -52,15 +65,13 @@ base64 < "$public_der" | tr -d '\n' > "$public_b64"
 printf '\n' >> "$public_b64"
 
 echo "Wrote:"
-echo "  $private_pem   (keep this secret)"
+echo "  $private_pem   (keep this secret; needed only for self-hosting)"
 echo "  $public_der"
-echo "  $public_b64    (paste this into LFC_EXTENSION_PUBLIC_KEY)"
+echo "  $public_b64    (set as LFC_EXTENSION_PUBLIC_KEY for a local keyed build)"
 echo
-echo "To build for release:"
+echo "To load an unpacked extension pinned to the ID this key derives:"
 echo "  export LFC_EXTENSION_PUBLIC_KEY=\"\$(cat \"$public_b64\")\""
-echo "  npm run build:production"
+echo "  LFC_EXTENSION_CHANNEL=production npm run build:production"
 echo
-echo "Verify the derived extension ID by loading dist/ unpacked and comparing"
-echo "the ID Chrome shows against the one you register with the Chrome Web"
-echo "Store. Every future release must build with the same key or the ID"
-echo "changes and users lose their local state."
+echo "That build is for local iteration only. Uploading it to the Chrome Web"
+echo "Store is rejected — CWS demands a keyless manifest for a new listing."
