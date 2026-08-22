@@ -13,3 +13,4 @@ desktop/**/build/
 # ~/.local/share/local-focus-coach/RELEASE.md) so the "how we publish this app"
 # steps stay off the public repo.
 /RELEASE.md
+
