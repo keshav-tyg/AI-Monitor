@@ -49,7 +49,6 @@ export function createManifest(environment: BuildEnvironment) {
       'Detects sustained passive feed use on this device and applies the intervention you configured. Nothing leaves this device.',
     permissions: [
       'storage',
-      'tabs',
       'declarativeNetRequest',
       'notifications',
       'alarms',

@@ -70,8 +70,6 @@ the network.
 ## Permissions and why
 
 - `storage` — persist the rules and state above.
-- `tabs` — close the originating tab when your rule selects the "Close the
-  tab" intervention.
 - `declarativeNetRequest` — install temporary "Block until tomorrow" rules on
   the three watched feed paths only, when your rule selects that.
 - `notifications` — surface the Chrome notification that accompanies "Notify

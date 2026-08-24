@@ -109,8 +109,6 @@ desktop app.
 - **storage** — persists the user's per-site rules, the current declaration
   and its consumed time, blocks, activity timeline, and intervention history.
   All in `chrome.storage.local`.
-- **tabs** — needed to close the originating tab when the person's rule
-  selects the "Close the tab" intervention.
 - **declarativeNetRequest** — installs narrowly scoped, temporary "Block
   until tomorrow" rules on the three watched feed paths only, when the
   person's rule selects that intervention.

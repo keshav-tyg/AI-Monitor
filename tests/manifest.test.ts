@@ -7,8 +7,12 @@ describe('manifest privacy boundary', () => {
     // `alarms` earns its place: without it an until-tomorrow block can outlive
     // its expiry, because a blocked page loads no content script and so never
     // wakes the worker to clear the rule.
+    // No `tabs`. `chrome.tabs.sendMessage` is covered by the content script's
+    // host_permissions and `chrome.tabs.remove` needs no permission at all —
+    // CWS review flagged the excess permission ("Purple Potassium") and
+    // rejected the one submission that declared it.
     expect(manifest.permissions).toEqual([
-      'storage', 'tabs', 'declarativeNetRequest', 'notifications', 'alarms', 'offscreen',
+      'storage', 'declarativeNetRequest', 'notifications', 'alarms', 'offscreen',
       'nativeMessaging',
     ]);
     expect(manifest.host_permissions).toEqual([
