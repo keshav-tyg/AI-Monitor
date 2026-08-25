@@ -21,8 +21,7 @@ Neither piece does anything on its own. Install both.
 
 ### Install
 
-1. Install the extension from the **[Chrome Web Store][cws]** *(pending
-   approval — link goes live once Google reviews the submission)*.
+1. Install the extension from the **[Chrome Web Store][cws]** .
 
 2. Download **[Local Focus Coach for macOS][gh]** from GitHub Releases.
    Unarchive the `.zip` and drag `Local Focus Coach.app` into your
