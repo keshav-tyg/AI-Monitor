@@ -320,7 +320,15 @@ async function raiseWall(
   const crossed = await withDeclarationLock(site, async () => {
     const declaration = await getDeclaration(site, now);
     if (!declaration || declaration.walledAt !== undefined) return false;
-    await saveDeclaration({ ...declaration, walledAt: now });
+    // Extend expiry to end of local day so the wall survives the 30-minute
+    // reprompt cooldown. Without this, coming back after the cooldown (or
+    // restarting Chrome past it) prunes the declaration and hands the session
+    // a fresh budget — the limit visibly "resets".
+    await saveDeclaration({
+      ...declaration,
+      walledAt: now,
+      expiresAt: Math.max(declaration.expiresAt, nextLocalMidnight(now)),
+    });
     return true;
   });
 
