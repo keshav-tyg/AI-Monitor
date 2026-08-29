@@ -44,7 +44,7 @@ export function createManifest(environment: BuildEnvironment) {
   return {
     manifest_version: 3,
     name: channel === 'production' ? 'Local Focus Coach' : 'Local Focus Coach (Development)',
-    version: '0.1.0',
+    version: '0.1.1',
     description:
       'Detects sustained passive feed use on this device and applies the intervention you configured. Nothing leaves this device.',
     permissions: [

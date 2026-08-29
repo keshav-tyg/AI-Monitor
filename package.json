@@ -1,7 +1,7 @@
 {
   "name": "local-focus-extension",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Local-first Chrome extension that detects sustained passive feed use and applies your configured intervention.",
   "scripts": {
